@@ -1,5 +1,6 @@
 //这是一个客户端的简单程序
 #include<iostream>
+#include<string>
 #include<winsock2.h>
 
 int main(){
@@ -37,13 +38,30 @@ int main(){
     }
     /*connect() 在内核态为该 socket 发起主动连接请求；
     调用成功标志 TCP 状态机由 CLOSED → SYN_SENT → ESTABLISHED 转换。*/
-    const char* message="Hello Server,this is Client!";
-    send(clientSocket,message ,strlen(message),0);
+    while (true) {
+        std::string message;
+        std::cout << "You: ";
+        std::getline(std::cin, message);
+        // 跳过空输入
+        if (message.empty()) continue;
+        // 发送输入文本
+        send(clientSocket, message.c_str(), message.size(), 0);
 
-    char buffer[4096]={0};
-    int byteReceived=recv(clientSocket,buffer,sizeof(buffer),0);
-    if(byteReceived>0){
-        std::cout<<"[Client]Received:"<<buffer<<std::endl;
+        // 退出命令检查
+        if (message == "/exit") {
+            std::cout << "[Client] Exiting...\n";
+            break;
+        }
+
+        char buffer[1024] = {0};
+        int bytesReceived = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
+        if (bytesReceived <= 0) {
+            std::cout << "[Client] Server disconnected.\n";
+            break;
+        }
+
+        buffer[bytesReceived] = '\0';
+        std::cout << "[Server]: " << buffer << std::endl;
     }
     closesocket(clientSocket);
     WSACleanup();
