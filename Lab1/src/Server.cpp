@@ -5,10 +5,11 @@
 #include <thread>
 #include <algorithm>
 #include<winsock2.h>
+#include"../include/Common.h"
 
 //定义处理Client消息的函数
 void handleClient(SOCKET clientSocket){
-        //修改接受信息逻辑,实现多次通信
+    //修改接受信息逻辑,实现多次通信
     while(true){
         char buffer[4096];
         int byteReceive=recv(clientSocket, buffer,sizeof(buffer)-1,0);
@@ -29,6 +30,7 @@ void handleClient(SOCKET clientSocket){
     }
     closesocket(clientSocket);//先关闭客户端套接字
 }
+
 int main(){
     //初始化阶段属于 Socket API 的系统级准备
     WSADATA wsaData;
@@ -66,8 +68,6 @@ int main(){
         //建立连接后多线程处理消息
         std::thread clientThread(handleClient, clientSocket);
         clientThread.detach();  // 分离线程
-
-
     }
     closesocket(serverSocket);//后关闭服务器套接字
     WSACleanup();//关闭windows socket环境
