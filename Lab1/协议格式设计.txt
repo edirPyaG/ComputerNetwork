@@ -1,0 +1,13 @@
+协议格式示例:
+TYPE|SENDER|ACCEPTER|MESSAGE
+
+TYPE包含类型有:
+EXIT
+JOIN
+MSG
+
+ACCEPTER包含的类型:
+All
+username
+
+

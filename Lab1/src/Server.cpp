@@ -5,30 +5,88 @@
 #include <thread>
 #include <algorithm>
 #include<winsock2.h>
+#include"../include/Common.h"
+#include"../include/Server.h"
+//广播函数实现
+void broadcast(const std::string & data, SOCKET excludeSocket){
+    std::lock_guard<std::mutex> lock(clientMutex);//加锁保护映射表
+    for(const auto &[name,socket]:userSocket){
+        if(socket!=excludeSocket){
+            send(socket,data.c_str(),data.size(),0);    
+        }
+    }
+}
+//处理用户消息,并且回显
+void onJoin(const Message & m,SOCKET clientSocket){
+    std::lock_guard<std::mutex> lock(clientMutex);//加锁保护映射表
+    //添加新的映射入表
+    userSocket[m.sender]=clientSocket;
+    socketUser[clientSocket]=m.sender;
 
+    Message joinMsg{"Sys","Server","All",m.sender+"has joined the chat."};
+    std::string strMsg=buildMessage(joinMsg);
+    broadcast(strMsg, clientSocket);
+    //在终端(服务器处输出提示)
+    std::cout<<std::string("[JOIN]"+m.sender)<<std::endl;
+}
+
+void onExit(const Message&m ,SOCKET clientSocket){
+    std::lock_guard<std::mutex>lock(clientMutex);//加锁保护映射表
+    //删除对应的映射表
+    userSocket.erase(m.sender);
+    socketUser.erase(clientSocket);
+
+    Message exitMsg{"Sys","Server","All",m.sender+"has left the chat."};
+    std::string strMsg=buildMessage(exitMsg);
+    broadcast(strMsg,clientSocket);
+    //在终端(服务器处输出提示)
+    std::cout<<std::string ("[EXIT]"+m.sender)<<std::endl;
+}
+
+void onMsg(const Message & m,SOCKET clientSocket){
+    std::lock_guard<std::mutex> lock(clientMutex);//加锁保护映射表
+    //回显消息
+    std::string strMsg=buildMessage(m);
+    //处理不同类型的消息
+    if(m.accepter=="All"){
+        broadcast(strMsg,clientSocket);
+    }
+    else{
+        //从映射表找到对应的套接字并发送
+        SOCKET accepterSocket=userSocket[m.accepter];
+        send(accepterSocket,strMsg.c_str(),strMsg.size(),0);
+    }
+    //在终端(服务器处输出提示)
+    std::cout<<std::string("[MSG] From "+m.sender+" to "+m.accepter+": "+m.content)<<std::endl;
+}
+//处理Client消息的函数
+void handleMessage(const Message &m, SOCKET clientSocket){
+    if (m.type == "JOIN")      onJoin(m, clientSocket);
+    else if (m.type == "MSG")  onMsg(m, clientSocket);
+    else if (m.type == "EXIT") onExit(m, clientSocket);
+    else {
+        std::cout << "[WARN] Unknown message type: " << m.type << std::endl;
+    }
+}
 //定义处理Client消息的函数
 void handleClient(SOCKET clientSocket){
-        //修改接受信息逻辑,实现多次通信
-    while(true){
-        char buffer[4096];
-        int byteReceive=recv(clientSocket, buffer,sizeof(buffer)-1,0);
-        if(byteReceive<=0){
-            std::cout<<"Client  dsiconnected"<<std::endl;
-            break;
-        }
+    char buffer[4096];
+    //修改接受信息逻辑,实现多次通信
+    while (true) {
+        int bytes = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
+        if (bytes <= 0) break;
+        buffer[bytes] = '\0';
         /*recv() 是应用层与传输层的边界操作，取出 TCP 接收窗口内的数据段。数据可能被拆包/粘包，因此应用层需自行定义消息边界（后续协议设计要考虑）。*/
-        buffer[byteReceive] = '\0'; // 防止未结束的字符串
-        std::cout << "[Server] Received: " << buffer << std::endl;
-        if(strcmp(buffer,"/exit")==0){
-        
-            std::cout<<"Client disconnected"<<std::endl;
+        std::string msg(buffer);
+        Message m = parseMessage(msg);
+        if (m.type == "EXIT") {
+            onExit(m, clientSocket);
             break;
         }
-        //回显消息
-        send(clientSocket, buffer, byteReceive, 0); //发送消息   
     }
     closesocket(clientSocket);//先关闭客户端套接字
 }
+
 int main(){
     //初始化阶段属于 Socket API 的系统级准备
     WSADATA wsaData;
@@ -66,8 +124,6 @@ int main(){
         //建立连接后多线程处理消息
         std::thread clientThread(handleClient, clientSocket);
         clientThread.detach();  // 分离线程
-
-
     }
     closesocket(serverSocket);//后关闭服务器套接字
     WSACleanup();//关闭windows socket环境
