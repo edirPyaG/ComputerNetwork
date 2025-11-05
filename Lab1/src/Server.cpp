@@ -6,6 +6,8 @@
 #include <algorithm>
 #include<winsock2.h>
 #include"../include/Common.h"
+#include"../include/Server.h"
+
 
 //定义处理Client消息的函数
 void handleClient(SOCKET clientSocket){
