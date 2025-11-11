@@ -6,6 +6,7 @@ EXIT
 JOIN
 MSG
 SYS
+WARN
 
 ACCEPTER包含的类型:
 All

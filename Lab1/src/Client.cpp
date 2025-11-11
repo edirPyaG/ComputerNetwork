@@ -79,13 +79,13 @@ void recvThread(SOCKET clientSocket) {
 
         // 根据消息类型进行分类处理
         if (m.type == "SYS") {               // 系统广播消息
-            std::cout << "\n[系统] " << m.content << std::endl;
+            std::cout << "\n[SYS] " << m.content << std::endl;
         } else if (m.type == "MSG") {        // 普通聊天消息
             std::cout << "\n[" << m.sender << "] " << m.content << std::endl;
         }
 
         // 打印完内容后重新输出提示符，保持良好交互体验。
-        std::cout << "You: ";
+        //std::cout << "You: ";
         std::flush(std::cout);
     }
 }
@@ -138,7 +138,7 @@ int main() {
 
     // --------------------- 第五阶段：启动通信线程 ---------------------
     std::string username;
-    std::cout << "请输入昵称: ";          // 启动前要求用户输入昵称
+    std::cout << "请输入昵称(Please enter your username): ";          // 启动前要求用户输入昵称
     std::getline(std::cin, username);
 
     // 使用两个独立线程同时发送和接收数据，实现双向通信

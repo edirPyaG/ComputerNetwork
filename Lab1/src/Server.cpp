@@ -16,23 +16,23 @@ void broadcast(const std::string & data, SOCKET excludeSocket){
             if (result == SOCKET_ERROR) {
                 std::cout << "[ERROR] broadcast send failed for user " << name << ", error: " << WSAGetLastError() << std::endl;
             } else {
-                std::cout << "[DEBUG] broadcast sent " << result << " bytes to " << name << std::endl;
+                std::cout << "[SYS] broadcast sent " << result << " bytes to " << name << std::endl;
             }
         }
     }
 }
 //处理用户消息,并且回显
 void onJoin(const Message & m,SOCKET clientSocket){
-    std::cout << "[DEBUG] onJoin called for user: " << m.sender << std::endl;
+    std::cout << "[SYS] onJoin called for user: " << m.sender << std::endl;
     
     // 先给当前客户端发送欢迎消息（在加锁之前）
-    Message welcomeMsg{"SYS","Server","ALL","欢迎加入聊天室！"};
+    Message welcomeMsg{"SYS","Server","ALL","欢迎加入聊天室(Welcome to join the chat)！"};
     std::string welcomeStr = buildMessage(welcomeMsg);
     int result = send(clientSocket, welcomeStr.c_str(), welcomeStr.size(), 0);
     if (result == SOCKET_ERROR) {
         std::cout << "[ERROR] Failed to send welcome message, error: " << WSAGetLastError() << std::endl;
     } else {
-        std::cout << "[DEBUG] Sent welcome message, " << result << " bytes" << std::endl;
+        std::cout << "[SYS] Sent welcome message, " << result << " bytes" << std::endl;
     }
     
     {
@@ -45,11 +45,11 @@ void onJoin(const Message & m,SOCKET clientSocket){
     // 再向其他客户端广播加入消息（在锁释放后调用 broadcast）
     Message joinMsg{"SYS","Server","ALL",m.sender + " has joined the chat."};
     std::string strMsg=buildMessage(joinMsg);
-    std::cout << "[DEBUG] Broadcasting JOIN message: [" << strMsg << "]" << std::endl;
+    std::cout << "[SYS] Broadcasting JOIN message: [" << strMsg << "]" << std::endl;
     broadcast(strMsg, clientSocket);
     //在终端(服务器处输出提示)
     std::cout<<std::string("[JOIN]"+m.sender)<<std::endl;
-    std::cout << "[DEBUG] onJoin completed" << std::endl;
+    std::cout << "[SYS] onJoin completed" << std::endl;
 }
 
 void onExit(const Message&m ,SOCKET clientSocket){
@@ -105,33 +105,33 @@ void handleMessage(const Message &m, SOCKET clientSocket){
 }
 //定义处理Client消息的函数
 void handleClient(SOCKET clientSocket){
-    std::cout << "[DEBUG] handleClient thread started for socket " << clientSocket << std::endl;
+    std::cout << "[SYS] handleClient thread started for socket " << clientSocket << std::endl;
     char buffer[4096];
     //修改接受信息逻辑,实现多次通信
     while (true) {
-        std::cout << "[DEBUG] Waiting for data..." << std::endl;
+        std::cout << "[SYS] Waiting for data..." << std::endl;
         int bytes = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
-        std::cout << "[DEBUG] recv returned " << bytes << std::endl;
+        std::cout << "[SYS] recv returned " << bytes << std::endl;
         if (bytes <= 0) {
-            std::cout << "[DEBUG] recv returned " << bytes << ", closing connection" << std::endl;
+            std::cout << "[SYS] recv returned " << bytes << ", closing connection" << std::endl;
             break;
         }
         buffer[bytes] = '\0';
         /*recv() 是应用层与传输层的边界操作，取出 TCP 接收窗口内的数据段。数据可能被拆包/粘包，因此应用层需自行定义消息边界（后续协议设计要考虑）。*/
         std::string msg(buffer);
-        std::cout << "[DEBUG] Received raw message: [" << msg << "]" << std::endl;
+        std::cout << "[SYS] Received raw message: [" << msg << "]" << std::endl;
         Message m = parseMessage(msg);
-        std::cout << "[DEBUG] Parsed - Type:[" << m.type << "] Sender:[" << m.sender << "] Accepter:[" << m.accepter << "] Content:[" << m.content << "]" << std::endl;
-        std::cout << "[DEBUG] Calling handleMessage..." << std::endl;
+        std::cout << "[SYS] Parsed - Type:[" << m.type << "] Sender:[" << m.sender << "] Accepter:[" << m.accepter << "] Content:[" << m.content << "]" << std::endl;
+        std::cout << "[SYS] Calling handleMessage..." << std::endl;
         handleMessage(m,clientSocket);
-        std::cout << "[DEBUG] handleMessage returned" << std::endl;
+        std::cout << "[SYS] handleMessage returned" << std::endl;
         if (m.type == "EXIT") {
             break;  // onExit 已在 handleMessage 中调用，无需重复
         }
     }
-    std::cout << "[DEBUG] Exiting handleClient, closing socket " << clientSocket << std::endl;
+    std::cout << "[SYS] Exiting handleClient, closing socket " << clientSocket << std::endl;
     closesocket(clientSocket);//先关闭客户端套接字
-    std::cout << "[DEBUG] handleClient thread ended" << std::endl;
+    std::cout << "[SYS] handleClient thread ended" << std::endl;
 }
 
 int main(){
