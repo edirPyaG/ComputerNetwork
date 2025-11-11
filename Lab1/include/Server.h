@@ -1,3 +1,6 @@
+#ifndef SERVER_H
+#define SERVER_H
+
 #include <iostream>
 #include <map>
 #include <vector>
@@ -25,4 +28,6 @@ void onExit(const Message& m, SOCKET clientSocket);
 void handleMessage(const Message &m, SOCKET clientSocket);
 // 通用广播
 void broadcast(const std::string& data, SOCKET excludeSocket = INVALID_SOCKET);
+
+#endif // SERVER_H
 
