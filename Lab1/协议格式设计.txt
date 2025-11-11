@@ -5,6 +5,7 @@ TYPE包含类型有:
 EXIT
 JOIN
 MSG
+SYS
 
 ACCEPTER包含的类型:
 All
