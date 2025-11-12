@@ -1,0 +1,10 @@
+".vscode/
+
+# 编译产物
+*.exe
+*.obj
+*.o
+build/
+Debug/
+Release/
+" 
