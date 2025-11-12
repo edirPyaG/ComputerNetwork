@@ -1,4 +1,5 @@
-#pragma once
+#ifndef COMMON_H
+#define COMMON_H
 
 #include <string>
 #include <iostream>
@@ -16,7 +17,11 @@ struct Message {
 };
 
 //构造消息
-std::string constructMessage(const Message& msg) ;
+std::string buildMessage(const Message& m) ;
 
 //解析消息
-Message parseMessage(const std::string& msgStr) ;
+Message parseMessage(const std::string& strMsg) ;
+
+//定义消息类型
+enum TYPE{SYS, JOIN , MSG ,EXIT, SWITCH_CHAT};
+#endif // COMMON_H
