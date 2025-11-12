@@ -4,6 +4,7 @@
 #include<iostream>
 #include<string>
 #include<winsock2.h>
+<<<<<<< HEAD
 #include<vector>
 #include<map>
 //新增session的抽象
@@ -17,6 +18,8 @@ public:
 extern std::map<std::string , Session> chatSession;
 extern std::string currSessionId;
 
+=======
+>>>>>>> d75a0fb4afe60d6c9a761753aedec4a22577c70c
 
 //发送消息线程函数声明
 void sendThread(SOCKET clientSocket, const std::string& userName);
