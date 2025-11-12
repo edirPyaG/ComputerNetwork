@@ -14,7 +14,10 @@
 #include "../include/Client.h"     // （预留接口）客户端类或辅助定义
 #pragma comment(lib, "ws2_32.lib")
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> d75a0fb4afe60d6c9a761753aedec4a22577c70c
 // ==========================================================================
 // 线程函数：发送线程
 // 职责：负责读取用户输入、封装协议消息并发送至服务器。
@@ -35,6 +38,7 @@ void sendThread(SOCKET clientSocket, const std::string &userName) {
 
         // 跳过空输入，防止输入回车直接发送空字符串导致阻塞
         if (input.empty()) continue;
+<<<<<<< HEAD
         if (input.find('/')==0 && input[1]!=' '){//处理更多的客户端命令实现会话机制
             // 处理退出命令（由用户在客户端主动输入 "/exit"）
             std::string command=input.substr(input.find('/'));
@@ -64,6 +68,18 @@ void sendThread(SOCKET clientSocket, const std::string &userName) {
             }
         }
 
+=======
+
+        // 处理退出命令（由用户在客户端主动输入 "/exit"）
+        if (input == "/exit") {
+            // 组装 EXIT 协议包并发送
+            Message exitMsg{"EXIT", userName, "ALL", ""};
+            std::string exitData = buildMessage(exitMsg);
+            send(clientSocket, exitData.c_str(), (int)exitData.size(), 0);
+            std::cout << "[Client] Exiting...\n";
+            break; // 跳出循环，线程结束
+        }
+>>>>>>> d75a0fb4afe60d6c9a761753aedec4a22577c70c
 
         // 否则认为是普通群发聊天消息，类型为 MSG
         Message msg{"MSG", userName, "ALL", input};

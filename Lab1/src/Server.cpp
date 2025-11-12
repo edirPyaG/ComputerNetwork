@@ -69,6 +69,7 @@ void onExit(const Message&m ,SOCKET clientSocket){
 
 void onMsg(const Message & m,SOCKET clientSocket){
     std::string strMsg=buildMessage(m);
+<<<<<<< HEAD
     // 查找目标 session
     auto it = sessions.find(m.accepter);
     if (it == sessions.end() && m.accepter != "ALL") {
@@ -78,6 +79,9 @@ void onMsg(const Message & m,SOCKET clientSocket){
     
     // 向 session 内所有成员转发消息
     broadcastToSession(m.accepter, buildMessage(m), clientSocket);
+=======
+    
+>>>>>>> d75a0fb4afe60d6c9a761753aedec4a22577c70c
     //处理不同类型的消息
     if(m.accepter=="All" || m.accepter=="ALL"){
         broadcast(strMsg,clientSocket);
