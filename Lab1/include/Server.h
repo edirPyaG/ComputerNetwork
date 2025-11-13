@@ -7,23 +7,23 @@
 #include <thread>
 #include <algorithm>
 #include<winsock2.h>
-#include"../include/Common.h"
+#include"Common.h"
 #include <mutex>
 #include<set>
 
 
 //定义接口和用户名之间的映射
 //管理所有在线的sessions
-class Session{
+class ServerSession {
 public:
     std::string id;
-    TYPE type;
-    std::set<std::string> members ; // 记录当前会话的用户,用与进行对应的socket查找
+    SessionType type;
+    std::set<std::string> members;  // 在线成员
 };
 std:: map<SOCKET,std::string> socketUser;
 std::map<std::string, SOCKET> userSocket;
 std::mutex clientMutex;//保护映射表的互斥锁,用于枷锁保护的参数
-std::map<std::string, Session> sessions;//用于管理所有的会话
+std::map<std::string, ServerSession> sessions;//用于管理所有的会话
 
 
 //主要函数声明

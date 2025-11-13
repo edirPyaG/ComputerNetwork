@@ -5,7 +5,6 @@
 #include <thread>
 #include <algorithm>
 #include<winsock2.h>
-#include"../include/Common.h"
 #include"../include/Server.h"
 //完善session相关的函数
 //创建群聊session函数
@@ -13,18 +12,18 @@ void createGroupSession(const std::string & groupName){
     std::lock_guard<std::mutex> lock(clientMutex);
     //C++ 的安全锁操作语句，它让多个线程在访问共享资源时保证互斥。
     if(sessions.find(groupName)==sessions.end()){
-        Session newSession;
+        ServerSession newSession;
         newSession.id=groupName;
         sessions[groupName]=newSession;//将新建的会话添加到会话表中
     }
 }
              
 //创建私聊session
-void createPrivateSessions(const std::string & user1,const std::string & user2){
+void createPrivateSession(const std::string &user1, const std::string &user2){
     std::lock_guard<std::mutex> lock(clientMutex);
     std::string sessionID =user1< user2 ? user1+user2:user2+user1;
     if(sessions.find(sessionID)==sessions.end()){
-        Session newSession;
+        ServerSession newSession;
         newSession.members.insert(user1);
         newSession.members.insert(user2);
         newSession.id=sessionID;
@@ -139,14 +138,14 @@ void onExit(const Message&m ,SOCKET clientSocket){
 
 void onMsg(const Message & m,SOCKET clientSocket){
     std::string strMsg=buildMessage(m);
-    // 查找目标 session
+    // 查找目标 ServerSession
     auto it = sessions.find(m.accepter);
     if (it == sessions.end() && m.accepter != "ALL") {
-        // 私聊：自动创建私聊 session
+        // 私聊：自动创建私聊 ServerSession
         createPrivateSession(m.sender, m.accepter);
     }
     
-    // 向 session 内所有成员转发消息
+    // 向 ServerSession 内所有成员转发消息
     broadcastToSession(m.accepter, buildMessage(m), clientSocket);
     //处理不同类型的消息
     if(m.accepter=="All" || m.accepter=="ALL"){
