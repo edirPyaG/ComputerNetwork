@@ -10,9 +10,13 @@
 #include <string>
 #include <thread>
 #include <winsock2.h>
-#include "../include/Common.h"     // 定义 Message 结构体与解析/封装函数
 #include "../include/Client.h"     // （预留接口）客户端类或辅助定义
 #pragma comment(lib, "ws2_32.lib")
+
+// 全局变量定义
+std::map<std::string, ClientSession> sessions;
+std::string currSessionId;
+std::string currUserName;
 
 // ==========================================================================
 // 线程函数：发送线程
@@ -36,7 +40,7 @@ void sendThread(SOCKET clientSocket, const std::string &userName) {
         if (input.empty()) continue;
         if (input.find('/')==0 && input[1]!=' '){//处理更多的客户端命令实现会话机制
             // 处理退出命令（由用户在客户端主动输入 "/exit"）
-            std::string command=input.substr(input.find('/'));
+            std::string command=input.substr(input.find('/')+1);
             if (command == "exit") {
                 // 组装 EXIT 协议包并发送
                 Message exitMsg{"EXIT", userName, "ALL", ""};
@@ -45,15 +49,14 @@ void sendThread(SOCKET clientSocket, const std::string &userName) {
                 std::cout << "[Client] Exiting...\n";
                 break; // 跳出循环，线程结束
             }
-            else if (command.substr(0,6 ) =="switch"){
-                std::string targetSession= command.substr(command.find(' ')+1);
-                currSessionId=targetSession;//更新当前的session id
+            else if (command.substr(0, 6) == "switch"){
+                std::string targetSession = command.substr(7);  // 跳过 "switch "
                     // 检查会话是否存在
                 if (sessions.find(targetSession) == sessions.end()) {
                     // 创建新会话
-                    Session newSession;
+                    ClientSession newSession;
                     newSession.id = targetSession;
-                    newSession.type = (targetSession == "ALL") ? "GROUP" : "PRIVATE";
+                    newSession.type = ST_PRIVATE;  // 默认为私聊
                     sessions[targetSession] = newSession;
                 }
                 
@@ -62,10 +65,10 @@ void sendThread(SOCKET clientSocket, const std::string &userName) {
                 continue;  // 不发送到服务器
             }
         }
-        
 
-        // 否则认为是普通群发聊天消息，类型为 MSG
-        Message msg{"MSG", userName, "ALL", input};
+
+        // 否则认为是普通聊天消息，发送到当前会话
+        Message msg{"MSG", userName, currSessionId, input};
         std::string sendData = buildMessage(msg);
         send(clientSocket, sendData.c_str(), (int)sendData.size(), 0);
     }
@@ -97,10 +100,43 @@ void recvThread(SOCKET clientSocket) {
         Message m = parseMessage(raw);
 
         // 根据消息类型进行分类处理
-        if (m.type == "SYS") {               // 系统广播消息
+        if (m.type == "SYS") {
             std::cout << "\n[SYS] " << m.content << std::endl;
-        } else if (m.type == "MSG") {        // 普通聊天消息
-            std::cout << "\n[" << m.sender << "] " << m.content << std::endl;
+        } else if (m.type == "MSG") {
+            // 确定消息属于哪个 session
+            std::string msgSessionId;
+            
+            if (m.accepter == "ALL" || m.accepter == "All") {
+                msgSessionId = "ALL";
+            } else {
+                // 私聊消息（可能是我发的或别人发给我的）
+                if (m.sender == currUserName) {
+                    // 我发的私聊消息
+                    msgSessionId = m.accepter;
+                } else {
+                    // 别人发给我的私聊消息
+                    msgSessionId = m.sender;
+                }
+            }
+            
+            // 保存到对应 session 历史
+            if (sessions.find(msgSessionId) == sessions.end()) {
+                // 自动创建 session
+                ClientSession newSession;
+                newSession.id = msgSessionId;
+                newSession.type = ST_PRIVATE;
+                sessions[msgSessionId] = newSession;
+            }
+            sessions[msgSessionId].history.push_back(m);
+            
+            // 只显示当前 session 的消息
+            if (msgSessionId == currSessionId) {
+                std::cout << "\n[" << m.sender << "] " << m.content << std::endl;
+            } else {
+                // 其他 session 的消息显示提示
+                std::cout << "\n[新消息@" << msgSessionId << "] " 
+                        << m.sender << ": " << m.content << std::endl;
+            }
         }
 
         // 打印完内容后重新输出提示符，保持良好交互体验。
@@ -159,6 +195,14 @@ int main() {
     std::string username;
     std::cout << "请输入昵称(Please enter your username): ";          // 启动前要求用户输入昵称
     std::getline(std::cin, username);
+    currUserName = username;  // 设置全局用户名变量
+    
+    // 初始化默认群聊session
+    ClientSession defaultGroup;
+    defaultGroup.id = "ALL";
+    defaultGroup.type = ST_GROUP;
+    sessions["ALL"] = defaultGroup;
+    currSessionId = "ALL";  // 设置当前的session id为all
 
     // 使用两个独立线程同时发送和接收数据，实现双向通信
     std::thread sender(sendThread, clientSocket, username);   // 处理键盘输入与发送
