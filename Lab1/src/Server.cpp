@@ -7,6 +7,76 @@
 #include<winsock2.h>
 #include"../include/Common.h"
 #include"../include/Server.h"
+//完善session相关的函数
+//创建群聊session函数
+void createGroupSession(const std::string & groupName){
+    std::lock_guard<std::mutex> lock(clientMutex);
+    //C++ 的安全锁操作语句，它让多个线程在访问共享资源时保证互斥。
+    if(sessions.find(groupName)==sessions.end()){
+        Session newSession;
+        newSession.id=groupName;
+        sessions[groupName]=newSession;//将新建的会话添加到会话表中
+    }
+}
+             
+//创建私聊session
+void createPrivateSessions(const std::string & user1,const std::string & user2){
+    std::lock_guard<std::mutex> lock(clientMutex);
+    std::string sessionID =user1< user2 ? user1+user2:user2+user1;
+    if(sessions.find(sessionID)==sessions.end()){
+        Session newSession;
+        newSession.members.insert(user1);
+        newSession.members.insert(user2);
+        newSession.id=sessionID;
+        sessions[sessionID]=newSession;
+    }
+
+}
+
+//向session中添加用户
+void addUserToSession(const std::string & sessionId ,const std::string &userName){
+    std::lock_guard<std::mutex> lock(clientMutex);
+    auto iter=sessions.find(sessionId);
+    if(iter!=sessions.end()){
+        //iter->second 取的是 map 项的值部分，也就是那个 Session 对象；
+        iter->second.members.insert(userName);
+    }
+}
+
+void removeUserFromSession(const std::string & sessionId,const std::string &userName){
+    std::lock_guard<std::mutex> lock(clientMutex);
+    auto iter=sessions.find(sessionId); //通过名字进行查找对应的session
+    if(iter!=sessions.end()){
+        iter->second.members.erase(userName);//删除session中的用户
+    }
+}
+
+//向session内所有成员广播消息
+void broadcastToSession(const std::string & sessionId, const std::string & msg, SOCKET excludeSocket){
+    std::lock_guard<std::mutex> lock(clientMutex);
+    auto iter =sessions.find(sessionId);
+    
+    //处理特殊的群组广播:all
+    if(sessionId=="ALL"){
+        for(const auto &[name,socket]:userSocket){
+            if(socket!=excludeSocket){
+                send(socket,msg.c_str(),msg.size(),0);
+            }
+        }
+        return ;//直接返回，不再进行后续操作
+    }
+
+    if(iter!=sessions.end()){
+        for(const auto &member:iter->second.members){
+            auto iter2=userSocket.find(member);
+            if(iter2!=userSocket.end()){
+                send(iter2->second,msg.c_str(),msg.size(),0);
+            }
+        }
+    }
+
+}
+
 //广播函数实现
 void broadcast(const std::string & data, SOCKET excludeSocket){
     std::lock_guard<std::mutex> lock(clientMutex);//加锁保护映射表
@@ -69,7 +139,6 @@ void onExit(const Message&m ,SOCKET clientSocket){
 
 void onMsg(const Message & m,SOCKET clientSocket){
     std::string strMsg=buildMessage(m);
-<<<<<<< HEAD
     // 查找目标 session
     auto it = sessions.find(m.accepter);
     if (it == sessions.end() && m.accepter != "ALL") {
@@ -79,9 +148,6 @@ void onMsg(const Message & m,SOCKET clientSocket){
     
     // 向 session 内所有成员转发消息
     broadcastToSession(m.accepter, buildMessage(m), clientSocket);
-=======
-    
->>>>>>> d75a0fb4afe60d6c9a761753aedec4a22577c70c
     //处理不同类型的消息
     if(m.accepter=="All" || m.accepter=="ALL"){
         broadcast(strMsg,clientSocket);

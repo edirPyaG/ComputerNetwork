@@ -22,7 +22,7 @@ public:
 };
 std:: map<SOCKET,std::string> socketUser;
 std::map<std::string, SOCKET> userSocket;
-std::mutex clientMutex;//保护映射表的互斥锁
+std::mutex clientMutex;//保护映射表的互斥锁,用于枷锁保护的参数
 std::map<std::string, Session> sessions;//用于管理所有的会话
 
 
