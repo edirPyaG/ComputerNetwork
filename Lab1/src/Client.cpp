@@ -25,58 +25,180 @@ std::string currUserName;
 void sendThread(SOCKET clientSocket, const std::string &userName) {
 
     // --------------------- 1. 用户登录阶段 ---------------------
-    // 首次连接后，发送 "JOIN" 协议消息，告诉服务器自己的昵称
-    Message joinMsg{"JOIN", userName, "ALL", ""};       // TYPE|SENDER|ACCEPTER|MESSAGE
-    std::string data = buildMessage(joinMsg);            // 封装为字符串
+    // 首次连接后，发送 "JOIN" 协议消息，仅注册用户名（不加入任何session）
+    Message joinMsg{"JOIN", userName, "", ""};       // accepter 为空
+    std::string data = buildMessage(joinMsg);
     send(clientSocket, data.c_str(), (int)data.size(), 0);
+    
+    std::cout << "\n[提示] 请使用 /join <会话名> 加入会话" << std::endl;
+    std::cout << "[提示] 例如：/join ALL 加入聊天室\n" << std::endl;
 
     // --------------------- 2. 聊天循环阶段 ---------------------
     while (true) {
         std::string input;
-        std::cout << userName << ": ";
+        std::cout << userName << " [" << (currSessionId.empty() ? "未加入" : currSessionId) << "]: ";
         std::getline(std::cin, input);
 
         // 跳过空输入，防止输入回车直接发送空字符串导致阻塞
         if (input.empty()) continue;
-        if (input.find('/')==0 && input[1]!=' '){//处理更多的客户端命令实现会话机制
-            // 处理退出命令（由用户在客户端主动输入 "/exit"）
-            std::string command=input.substr(input.find('/')+1);
+        
+        // 处理命令
+        if (input[0] == '/') {
+            // 去除开头的斜杠，并去除前后空格
+            std::string command = input.substr(1);
+            // 去除前导空格
+            size_t start = command.find_first_not_of(" \t");
+            if (start != std::string::npos) {
+                command = command.substr(start);
+            }
+            
             if (command == "exit") {
                 // 组装 EXIT 协议包并发送
-                Message exitMsg{"EXIT", userName, "ALL", ""};
+                Message exitMsg{"EXIT", userName, "", ""};
                 std::string exitData = buildMessage(exitMsg);
                 send(clientSocket, exitData.c_str(), (int)exitData.size(), 0);
                 std::cout << "[Client] Exiting...\n";
-                break; // 跳出循环，线程结束
+                break;
             }
-            else if (command.substr(0, 6) == "switch"){
-                std::string targetSession = command.substr(7);  // 跳过 "switch "
-                    // 检查会话是否存在
+            else if (command.substr(0, 4) == "join") {
+                // 加入会话
+                // 查找第一个空格后的内容
+                size_t spacePos = command.find(' ');
+                if (spacePos == std::string::npos || spacePos + 1 >= command.length()) {
+                    std::cout << "[错误] 用法: /join <会话名>" << std::endl;
+                    continue;
+                }
+                std::string targetSession = command.substr(spacePos + 1);
+                // 去除目标会话名的前后空格
+                size_t sessStart = targetSession.find_first_not_of(" \t");
+                size_t sessEnd = targetSession.find_last_not_of(" \t");
+                if (sessStart != std::string::npos) {
+                    targetSession = targetSession.substr(sessStart, sessEnd - sessStart + 1);
+                }
+                
+                std::cout << "[DEBUG] Joining session: [" << targetSession << "]" << std::endl;
+                
+                Message joinSessionMsg{"JOIN_SESSION", userName, targetSession, ""};
+                std::string joinData = buildMessage(joinSessionMsg);
+                send(clientSocket, joinData.c_str(), (int)joinData.size(), 0);
+                
+                // 本地创建 session（如果不存在）
                 if (sessions.find(targetSession) == sessions.end()) {
-                    // 创建新会话
                     ClientSession newSession;
                     newSession.id = targetSession;
-                    newSession.type = ST_PRIVATE;  // 默认为私聊
+                    newSession.type = (targetSession == "ALL") ? ST_GROUP : ST_PRIVATE;
                     sessions[targetSession] = newSession;
+                }
+                
+                // 切换到该 session
+                currSessionId = targetSession;
+                std::cout << "[Client] 正在加入会话: " << targetSession << std::endl;
+                continue;
+            }
+            else if (command.substr(0, 5) == "leave") {
+                // 离开会话
+                size_t spacePos = command.find(' ');
+                if (spacePos == std::string::npos || spacePos + 1 >= command.length()) {
+                    std::cout << "[错误] 用法: /leave <会话名>" << std::endl;
+                    continue;
+                }
+                std::string targetSession = command.substr(spacePos + 1);
+                // 去除前后空格
+                size_t sessStart = targetSession.find_first_not_of(" \t");
+                size_t sessEnd = targetSession.find_last_not_of(" \t");
+                if (sessStart != std::string::npos) {
+                    targetSession = targetSession.substr(sessStart, sessEnd - sessStart + 1);
+                }
+                
+                Message leaveSessionMsg{"LEAVE_SESSION", userName, targetSession, ""};
+                std::string leaveData = buildMessage(leaveSessionMsg);
+                send(clientSocket, leaveData.c_str(), (int)leaveData.size(), 0);
+                
+                // 如果离开的是当前会话，清空 currSessionId
+                if (currSessionId == targetSession) {
+                    currSessionId = "";
+                }
+                
+                std::cout << "[Client] 正在离开会话: " << targetSession << std::endl;
+                continue;
+            }
+            else if (command.substr(0, 6) == "switch") {
+                // 切换会话（不需要发送到服务器，纯本地操作）
+                size_t spacePos = command.find(' ');
+                if (spacePos == std::string::npos || spacePos + 1 >= command.length()) {
+                    std::cout << "[错误] 用法: /switch <会话名>" << std::endl;
+                    continue;
+                }
+                std::string targetSession = command.substr(spacePos + 1);
+                // 去除前后空格
+                size_t sessStart = targetSession.find_first_not_of(" \t");
+                size_t sessEnd = targetSession.find_last_not_of(" \t");
+                if (sessStart != std::string::npos) {
+                    targetSession = targetSession.substr(sessStart, sessEnd - sessStart + 1);
+                }
+                
+                // 检查是否已加入该 session
+                if (sessions.find(targetSession) == sessions.end()) {
+                    std::cout << "[错误] 你还没有加入会话 " << targetSession << std::endl;
+                    std::cout << "[提示] 请先 /join " << targetSession << std::endl;
+                    continue;
                 }
                 
                 currSessionId = targetSession;
                 std::cout << "[Client] 已切换到会话: " << currSessionId << std::endl;
-                continue;  // 不发送到服务器
+                
+                // 显示最近的消息
+                auto &history = sessions[currSessionId].history;
+                int startIdx = (history.size() > 5) ? (int)(history.size() - 5) : 0;
+                if (startIdx < (int)history.size()) {
+                    std::cout << "--- 最近消息 ---" << std::endl;
+                    for (size_t i = startIdx; i < history.size(); i++) {
+                        std::cout << "[" << history[i].sender << "] " << history[i].content << std::endl;
+                    }
+                    std::cout << "---------------" << std::endl;
+                }
+                
+                continue;
+            }
+            else if (command == "sessions") {
+                // 显示所有会话
+                std::cout << "\n=== 我的会话列表 ===" << std::endl;
+                for (const auto &[sid, session] : sessions) {
+                    std::string typeStr = (session.type == ST_GROUP) ? "群聊" : "私聊";
+                    std::string current = (sid == currSessionId) ? " [当前]" : "";
+                    std::cout << sid << " [" << typeStr << "] - " 
+                              << session.history.size() << " 条消息" << current << std::endl;
+                }
+                std::cout << "===================\n" << std::endl;
+                continue;
+            }
+            else {
+                std::cout << "[错误] 未知命令。可用命令：" << std::endl;
+                std::cout << "  /join <会话名>   - 加入会话" << std::endl;
+                std::cout << "  /leave <会话名>  - 离开会话" << std::endl;
+                std::cout << "  /switch <会话名> - 切换会话" << std::endl;
+                std::cout << "  /sessions        - 显示所有会话" << std::endl;
+                std::cout << "  /exit            - 退出程序" << std::endl;
+                continue;
             }
         }
-
-
-        // 否则认为是普通聊天消息，发送到当前会话
+        
+        // 检查是否在某个 session 中
+        if (currSessionId.empty()) {
+            std::cout << "[错误] 请先加入一个会话，例如：/join ALL" << std::endl;
+            continue;
+        }
+        
+        // 发送消息到当前 session
         Message msg{"MSG", userName, currSessionId, input};
         std::string sendData = buildMessage(msg);
         send(clientSocket, sendData.c_str(), (int)sendData.size(), 0);
+        
+        // 本地保存（发送的消息也要记录）
+        sessions[currSessionId].history.push_back(msg);
     }
 
     // --------------------- 3. 退出资源阶段 ---------------------
-    // 主动关闭自身 socket，通知服务器断开连接。
-    // 接收线程会因为 recv() 出错或返回 0 自动结束。
-    //放在主函数中执行
 }
 
 // ==========================================================================
@@ -84,47 +206,47 @@ void sendThread(SOCKET clientSocket, const std::string &userName) {
 // 职责：持续监听服务器的消息回传，并在本地解析、输出。
 // ==========================================================================
 void recvThread(SOCKET clientSocket) {
-    char buffer[4096]; // 接收缓冲区
+    char buffer[4096];
     while (true) {
-        // recv() 阻塞式接收服务器端数据
         int bytes = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
-        if (bytes <= 0) { // 若返回 <=0，说明服务器关闭或发生错误
-            std::cout << "\n[Client] Server closed connection.\n";
+        if (bytes <= 0) {
+            std::cout << "\n[Client] 连接已断开" << std::endl;
             break;
         }
 
-        buffer[bytes] = '\0';  // 添加字符串终止符
-        std::string raw(buffer);
-
-        // 对收到的数据进行协议解析，转换为结构体 Message
-        Message m = parseMessage(raw);
+        buffer[bytes] = '\0';
+        Message m = parseMessage(std::string(buffer));
 
         // 根据消息类型进行分类处理
         if (m.type == "SYS") {
-            std::cout << "\n[SYS] " << m.content << std::endl;
-        } else if (m.type == "MSG") {
-            // 确定消息属于哪个 session
+            // 系统消息（总是显示）
+            std::cout << "\n[系统] " << m.content << std::endl;
+        }
+        else if (m.type == "NOTIFY") {
+            // 通知消息（如新私聊）
+            std::cout << "\n[通知] " << m.content << std::endl;
+        }
+        else if (m.type == "MSG") {
+            // 普通消息
             std::string msgSessionId;
             
-            if (m.accepter == "ALL" || m.accepter == "All") {
+            // 判断消息属于哪个 session
+            if (m.accepter == "ALL") {
                 msgSessionId = "ALL";
+            } else if (m.sender == currUserName) {
+                // 我发的消息（回显）
+                msgSessionId = m.accepter;
             } else {
-                // 私聊消息（可能是我发的或别人发给我的）
-                if (m.sender == currUserName) {
-                    // 我发的私聊消息
-                    msgSessionId = m.accepter;
-                } else {
-                    // 别人发给我的私聊消息
-                    msgSessionId = m.sender;
-                }
+                // 别人发给我的消息
+                msgSessionId = m.sender;
             }
             
-            // 保存到对应 session 历史
+            // 保存到对应 session
             if (sessions.find(msgSessionId) == sessions.end()) {
                 // 自动创建 session
                 ClientSession newSession;
                 newSession.id = msgSessionId;
-                newSession.type = ST_PRIVATE;
+                newSession.type = (msgSessionId == "ALL") ? ST_GROUP : ST_PRIVATE;
                 sessions[msgSessionId] = newSession;
             }
             sessions[msgSessionId].history.push_back(m);
@@ -133,14 +255,12 @@ void recvThread(SOCKET clientSocket) {
             if (msgSessionId == currSessionId) {
                 std::cout << "\n[" << m.sender << "] " << m.content << std::endl;
             } else {
-                // 其他 session 的消息显示提示
-                std::cout << "\n[新消息@" << msgSessionId << "] " 
-                        << m.sender << ": " << m.content << std::endl;
+                // 其他 session 有新消息，提示
+                std::cout << "\n[新消息 @" << msgSessionId << "] " 
+                          << m.sender << ": " << m.content << std::endl;
             }
         }
 
-        // 打印完内容后重新输出提示符，保持良好交互体验。
-        //std::cout << "You: ";
         std::flush(std::cout);
     }
 }
@@ -193,16 +313,12 @@ int main() {
 
     // --------------------- 第五阶段：启动通信线程 ---------------------
     std::string username;
-    std::cout << "请输入昵称(Please enter your username): ";          // 启动前要求用户输入昵称
+    std::cout << "请输入昵称(Please enter your username): ";
     std::getline(std::cin, username);
     currUserName = username;  // 设置全局用户名变量
     
-    // 初始化默认群聊session
-    ClientSession defaultGroup;
-    defaultGroup.id = "ALL";
-    defaultGroup.type = ST_GROUP;
-    sessions["ALL"] = defaultGroup;
-    currSessionId = "ALL";  // 设置当前的session id为all
+    // 不初始化默认 session！用户需要主动 /join
+    currSessionId = "";  // 空字符串表示未加入任何 session
 
     // 使用两个独立线程同时发送和接收数据，实现双向通信
     std::thread sender(sendThread, clientSocket, username);   // 处理键盘输入与发送
