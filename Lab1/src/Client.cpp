@@ -21,6 +21,60 @@ std::string currSessionId;
 std::string currUserName;
 Storage* storage = nullptr;  // 全局数据库对象
 
+// ========== 时间戳格式化工具函数实现 ==========
+
+// 格式化时间戳为易读字符串
+std::string formatTimestamp(int64_t timestamp) {
+    if (timestamp == 0) {
+        return "";
+    }
+    
+    time_t rawTime = static_cast<time_t>(timestamp);
+    time_t now = std::time(nullptr);
+    
+    struct tm* timeInfo = localtime(&rawTime);
+    struct tm* nowInfo = localtime(&now);
+    
+    char buffer[100];
+    
+    // 计算天数差
+    int dayDiff = nowInfo->tm_yday - timeInfo->tm_yday;
+    
+    if (dayDiff == 0 && nowInfo->tm_year == timeInfo->tm_year) {
+        // 今天：只显示时:分
+        strftime(buffer, sizeof(buffer), "%H:%M", timeInfo);
+    } else if (dayDiff == 1 && nowInfo->tm_year == timeInfo->tm_year) {
+        // 昨天：显示"昨天 时:分"
+        strftime(buffer, sizeof(buffer), "昨天 %H:%M", timeInfo);
+    } else if (dayDiff < 7 && nowInfo->tm_year == timeInfo->tm_year) {
+        // 一周内：显示"星期X 时:分"
+        const char* weekdays[] = {"周日", "周一", "周二", "周三", "周四", "周五", "周六"};
+        char timeStr[50];
+        strftime(timeStr, sizeof(timeStr), "%H:%M", timeInfo);
+        snprintf(buffer, sizeof(buffer), "%s %s", weekdays[timeInfo->tm_wday], timeStr);
+    } else if (nowInfo->tm_year == timeInfo->tm_year) {
+        // 今年：显示"月-日 时:分"
+        strftime(buffer, sizeof(buffer), "%m-%d %H:%M", timeInfo);
+    } else {
+        // 跨年：显示"年-月-日 时:分"
+        strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M", timeInfo);
+    }
+    
+    return std::string(buffer);
+}
+
+// 判断是否需要显示时间戳
+bool shouldShowTimestamp(int64_t currentTime, int64_t lastTime, int threshold) {
+    // 如果是第一条消息，显示时间戳
+    if (lastTime == 0) {
+        return true;
+    }
+    
+    // 如果时间间隔超过阈值（默认5分钟），显示时间戳
+    int64_t diff = currentTime - lastTime;
+    return (diff >= threshold);
+}
+
 // ==========================================================================
 // 线程函数：发送线程
 // 职责：负责读取用户输入、封装协议消息并发送至服务器。
@@ -155,8 +209,16 @@ void sendThread(SOCKET clientSocket, const std::string &userName) {
                 int startIdx = (history.size() > 5) ? (int)(history.size() - 5) : 0;
                 if (startIdx < (int)history.size()) {
                     std::cout << "--- 最近消息 ---" << std::endl;
+                    
+                    int64_t lastTime = 0;
                     for (size_t i = startIdx; i < history.size(); i++) {
+                        // 智能显示时间戳
+                        if (shouldShowTimestamp(history[i].timestamp, lastTime, 300)) {
+                            std::cout << "--- " << formatTimestamp(history[i].timestamp) << " ---" << std::endl;
+                        }
+                        
                         std::cout << "[" << history[i].sender << "] " << history[i].content << std::endl;
+                        lastTime = history[i].timestamp;
                     }
                     std::cout << "---------------" << std::endl;
                 }
@@ -198,8 +260,15 @@ void sendThread(SOCKET clientSocket, const std::string &userName) {
                     std::cout << "（共 " << fullHistory.size() << " 条）" << std::endl;
                     std::cout << "-------------------------------------------" << std::endl;
                     
+                    int64_t lastTime = 0;
                     for (const auto& msg : fullHistory) {
+                        // 智能显示时间戳
+                        if (shouldShowTimestamp(msg.timestamp, lastTime, 300)) {
+                            std::cout << "\n--- " << formatTimestamp(msg.timestamp) << " ---" << std::endl;
+                        }
+                        
                         std::cout << "[" << msg.sender << "] " << msg.content << std::endl;
+                        lastTime = msg.timestamp;
                     }
                     
                     std::cout << "==========================================\n" << std::endl;
@@ -231,7 +300,7 @@ void sendThread(SOCKET clientSocket, const std::string &userName) {
         std::string sendData = buildMessage(msg);
         send(clientSocket, sendData.c_str(), (int)sendData.size(), 0);
         
-        // 🔥 保存到数据库
+        //  保存到数据库
         if (storage) {
             SessionType type = sessions[currSessionId].type;
             if (storage->saveMessage(msg, currSessionId, type)) {
@@ -296,7 +365,7 @@ void recvThread(SOCKET clientSocket) {
                 newSession.lastReadTime = 0;
                 sessions[msgSessionId] = newSession;
                 
-                // 🔥 保存会话到数据库
+                // 保存会话到数据库
                 if (storage) {
                     storage->saveSession(msgSessionId, newSession.type);
                 }
@@ -305,7 +374,7 @@ void recvThread(SOCKET clientSocket) {
             // 保存到内存
             sessions[msgSessionId].history.push_back(m);
             
-            // 🔥 保存到数据库
+            // 保存到数据库
             if (storage) {
                 SessionType type = sessions[msgSessionId].type;
                 storage->saveMessage(m, msgSessionId, type);
@@ -319,7 +388,23 @@ void recvThread(SOCKET clientSocket) {
             
             // 只显示当前 session 的消息
             if (msgSessionId == currSessionId) {
-                std::cout << "\n[" << m.sender << "] " << m.content << std::endl;
+                // 智能显示时间戳
+                int64_t lastMsgTime = 0;
+                
+                // 获取上一条消息的时间戳
+                auto &history = sessions[msgSessionId].history;
+                if (history.size() > 1) {
+                    // history 最后一个是刚刚添加的当前消息，倒数第二个是上一条
+                    lastMsgTime = history[history.size() - 2].timestamp;
+                }
+                
+                // 判断是否需要显示时间戳（默认阈值：5分钟 = 300秒）
+                if (shouldShowTimestamp(m.timestamp, lastMsgTime, 300)) {
+                    std::string timeStr = formatTimestamp(m.timestamp);
+                    std::cout << "\n--- " << timeStr << " ---" << std::endl;
+                }
+                
+                std::cout << "[" << m.sender << "] " << m.content << std::endl;
             } else {
                 // 其他 session 有新消息，提示
                 std::cout << "\n[新消息 @" << msgSessionId << "] " 
@@ -383,7 +468,7 @@ int main() {
     std::getline(std::cin, username);
     currUserName = username;  // 设置全局用户名变量
     
-    // 🔥 初始化数据库
+    // 初始化数据库
     storage = new Storage(username);
     if (!storage->init()) {
         std::cout << "[ERROR] 数据库初始化失败！" << std::endl;
@@ -394,9 +479,9 @@ int main() {
         return 0;
     }
     
-    std::cout << "\n[SYS] ✅ 数据库已加载" << std::endl;
+    std::cout << "\n[SYS] 数据库已加载" << std::endl;
     
-    // 🔥 从数据库恢复历史会话
+    //  从数据库恢复历史会话
     auto sessionList = storage->loadSessions();
     if (sessionList.size() > 0) {
         std::cout << "[SYS] 找到 " << sessionList.size() << " 个历史会话：" << std::endl;
@@ -437,7 +522,7 @@ int main() {
     closesocket(clientSocket);      // 真正关闭
     receiver.join();
 
-    // 🔥 清理数据库资源
+    // 清理数据库资源
     if (storage) {
         storage->close();
         delete storage;

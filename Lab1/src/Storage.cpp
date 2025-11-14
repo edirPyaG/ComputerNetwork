@@ -135,7 +135,7 @@ std::vector<Message> Storage::loadHistory(const std::string& sessionId, int limi
     std::vector<Message> history;
     
     const char* sql = R"(
-        SELECT sender, receiver, content, message_type 
+        SELECT sender, receiver, content, message_type, timestamp
         FROM messages 
         WHERE session_id = ? 
         ORDER BY timestamp DESC 
@@ -157,6 +157,7 @@ std::vector<Message> Storage::loadHistory(const std::string& sessionId, int limi
         msg.accepter = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
         msg.content = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
         msg.type = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        msg.timestamp = sqlite3_column_int64(stmt, 4);  // 🔥 读取时间戳
         
         history.push_back(msg);
     }
@@ -174,7 +175,7 @@ std::vector<Message> Storage::getNewMessages(const std::string& sessionId, int64
     std::vector<Message> newMessages;
     
     const char* sql = R"(
-        SELECT sender, receiver, content, message_type 
+        SELECT sender, receiver, content, message_type, timestamp
         FROM messages 
         WHERE session_id = ? AND timestamp > ? 
         ORDER BY timestamp ASC
@@ -195,6 +196,7 @@ std::vector<Message> Storage::getNewMessages(const std::string& sessionId, int64
         msg.accepter = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
         msg.content = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
         msg.type = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        msg.timestamp = sqlite3_column_int64(stmt, 4);  // 🔥 读取时间戳
         
         newMessages.push_back(msg);
     }

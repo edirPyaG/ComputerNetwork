@@ -8,12 +8,21 @@
 #include <thread>
 #include <algorithm>
 #include <winsock2.h>
+#include <ctime>
 
 struct Message {
     std::string type; // JOIN, MT_MSG, EXIT, SYS, etc.//将sessiontype和messagetype分离
     std::string sender;
     std::string accepter;
     std::string content;
+    int64_t timestamp;  // 消息时间戳（秒级Unix时间）
+    
+    // 默认构造函数
+    Message() : timestamp(0) {}
+    
+    // 带参数的构造函数（兼容旧代码）
+    Message(const std::string& t, const std::string& s, const std::string& a, const std::string& c)
+        : type(t), sender(s), accepter(a), content(c), timestamp(std::time(nullptr)) {}
 };
 
 //构造消息

@@ -23,11 +23,19 @@ Message parseMessage(const std::string &strMsg){
         if(parts.size()>1) m.sender=parts[1];
         if(parts.size()>2) m.accepter=parts[2];       
         if(parts.size()>3) m.content=parts[3];
+        
+        // 解析时间戳（如果存在）
+        if(parts.size()>4 && !parts[4].empty()) {
+            m.timestamp = std::stoll(parts[4]);
+        } else {
+            m.timestamp = std::time(nullptr); // 默认当前时间
+        }
 
         return m;
 }
 //定义封装函数
 std::string buildMessage(const Message& m) {
-    return m.type + "|" + m.sender + "|" + m.accepter + "|" + m.content;
+    // 协议格式: TYPE|SENDER|ACCEPTER|CONTENT|TIMESTAMP
+    return m.type + "|" + m.sender + "|" + m.accepter + "|" + m.content + "|" + std::to_string(m.timestamp);
 }
 

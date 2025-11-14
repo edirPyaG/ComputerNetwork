@@ -6,6 +6,21 @@
 #include <algorithm>
 #include<winsock2.h>
 #include"../include/Server.h"
+//更新退逻辑,分离退出线程 ,防止推出命令阻塞
+void exitThread(SOCKET serverSocket){
+    std::string command;
+    while(std::cin>>command){
+        if(command=="exit"){
+            closesocket(serverSocket);
+            WSACleanup();
+            exit(0);
+        }
+    }
+
+}
+
+
+
 //完善session相关的函数
 //创建群聊session函数
 void createGroupSession(const std::string & groupName){
@@ -332,6 +347,9 @@ int main(){
         return 1;
     }
     SOCKET serverSocket=socket(AF_INET,SOCK_STREAM,0);
+    //创建退出线程
+    std::thread exitThread(exitThread,serverSocket);
+    exitThread.detach(); //分离退出线程
     if(serverSocket==INVALID_SOCKET){
         std::cout<<"Create Socket failed"<<std::endl;
         return 1;
@@ -362,7 +380,9 @@ int main(){
         std::thread clientThread(handleClient, clientSocket);
         clientThread.detach();  // 分离线程
     }
-    closesocket(serverSocket);//后关闭服务器套接字
-    WSACleanup();//关闭windows socket环境
+    exitThread.join();
+    std::cout<<"server has been closed"<<std::endl;
+    // closesocket(serverSocket);//后关闭服务器套接字
+    // WSACleanup();//关闭windows socket环境
     return 0;
 }

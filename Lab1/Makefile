@@ -1,5 +1,5 @@
 CC=cl.exe
-CFLAGS=/EHsc /std:c++17 /utf-8 /I include /W4
+CFLAGS=/EHsc /std:c++17 /utf-8 /I include /I lib\sqlitex64 /W4
 LDFLAGS=ws2_32.lib
 OBJDIR=build
 
