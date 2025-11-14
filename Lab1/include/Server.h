@@ -29,6 +29,8 @@ std::map<std::string, ServerSession> sessions;//用于管理所有的会话
 //主要函数声明
 void handleClient(SOCKET clientSocket); //处理客户端请求
 void onJoin(const Message& m, SOCKET clientSocket);
+void onJoinSession(const Message& m, SOCKET clientSocket);  // 新增：加入会话
+void onLeaveSession(const Message& m, SOCKET clientSocket); // 新增：离开会话
 void onMsg(const Message& m, SOCKET clientSocket);
 void onExit(const Message& m, SOCKET clientSocket);
 //处理消息

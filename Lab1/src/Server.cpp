@@ -90,12 +90,19 @@ void broadcast(const std::string & data, SOCKET excludeSocket){
         }
     }
 }
-//处理用户消息,并且回显
-void onJoin(const Message & m,SOCKET clientSocket){
-    std::cout << "[SYS] onJoin called for user: " << m.sender << std::endl;
+//处理用户连接（不自动加入任何session）
+void onJoin(const Message & m, SOCKET clientSocket){
+    std::cout << "[SYS] User " << m.sender << " connected (not joined any session)" << std::endl;
     
-    // 先给当前客户端发送欢迎消息（在加锁之前）
-    Message welcomeMsg{"SYS","Server","ALL","欢迎加入聊天室(Welcome to join the chat)！"};
+    {
+        std::lock_guard<std::mutex> lock(clientMutex);
+        userSocket[m.sender] = clientSocket;
+        socketUser[clientSocket] = m.sender;
+    }
+    
+    // 仅给该用户发送欢迎消息（不广播）
+    Message welcomeMsg{"SYS", "Server", m.sender, 
+        "欢迎！请使用 /join ALL 加入聊天室，或 /join <用户名> 开始私聊"};
     std::string welcomeStr = buildMessage(welcomeMsg);
     int result = send(clientSocket, welcomeStr.c_str(), welcomeStr.size(), 0);
     if (result == SOCKET_ERROR) {
@@ -104,21 +111,111 @@ void onJoin(const Message & m,SOCKET clientSocket){
         std::cout << "[SYS] Sent welcome message, " << result << " bytes" << std::endl;
     }
     
+    // 检查是否是第一个用户，如果是则创建 ALL 群
     {
-        std::lock_guard<std::mutex> lock(clientMutex);//加锁保护映射表
-        //添加新的映射入表
-        userSocket[m.sender]=clientSocket;
-        socketUser[clientSocket]=m.sender;
-    } // 锁在这里释放
+        std::lock_guard<std::mutex> lock(clientMutex);
+        if (sessions.find("ALL") == sessions.end()) {
+            ServerSession allSession;
+            allSession.id = "ALL";
+            allSession.type = ST_GROUP;
+            sessions["ALL"] = allSession;
+            std::cout << "[SYS] Created default group session: ALL" << std::endl;
+        }
+    }
+    
+    std::cout << "[SYS] onJoin completed for " << m.sender << std::endl;
+}
 
-    // 再向其他客户端广播加入消息（在锁释放后调用 broadcast）
-    Message joinMsg{"SYS","Server","ALL",m.sender + " has joined the chat."};
-    std::string strMsg=buildMessage(joinMsg);
-    std::cout << "[SYS] Broadcasting JOIN message: [" << strMsg << "]" << std::endl;
-    broadcast(strMsg, clientSocket);
-    //在终端(服务器处输出提示)
-    std::cout<<std::string("[JOIN]"+m.sender)<<std::endl;
-    std::cout << "[SYS] onJoin completed" << std::endl;
+// 处理加入会话
+void onJoinSession(const Message &m, SOCKET clientSocket) {
+    std::string sessionId = m.accepter;
+    std::string userName = m.sender;
+    
+    std::cout << "[SYS] " << userName << " trying to join session: " << sessionId << std::endl;
+    
+    {
+        std::lock_guard<std::mutex> lock(clientMutex);
+        
+        // 检查 session 是否存在
+        auto it = sessions.find(sessionId);
+        
+        // 如果是私聊（不是 ALL）且 session 不存在，自动创建
+        if (it == sessions.end() && sessionId != "ALL") {
+            // 检查目标用户是否在线（私聊需要对方存在）
+            if (userSocket.find(sessionId) != userSocket.end()) {
+                // 创建私聊 session
+                ServerSession privateSession;
+                privateSession.id = sessionId;  // 使用对方用户名作为 sessionId
+                privateSession.type = ST_PRIVATE;
+                privateSession.members.insert(userName);
+                privateSession.members.insert(sessionId);
+                sessions[sessionId] = privateSession;
+                std::cout << "[SYS] Auto-created private session: " << sessionId << std::endl;
+                it = sessions.find(sessionId);
+            } else {
+                // 对方不在线
+                Message errMsg{"SYS", "Server", userName, 
+                    "用户 " + sessionId + " 不在线"};
+                std::string errStr = buildMessage(errMsg);
+                send(clientSocket, errStr.c_str(), errStr.size(), 0);
+                std::cout << "[WARN] User " << sessionId << " not online" << std::endl;
+                return;
+            }
+        }
+        
+        if (it == sessions.end()) {
+            // Session 不存在（ALL 群不存在，不应该发生）
+            Message errMsg{"SYS", "Server", userName, 
+                "会话 " + sessionId + " 不存在"};
+            std::string errStr = buildMessage(errMsg);
+            send(clientSocket, errStr.c_str(), errStr.size(), 0);
+            std::cout << "[WARN] Session " << sessionId << " not found" << std::endl;
+            return;
+        }
+        
+        // 检查是否已在该 session 中
+        if (it->second.members.count(userName)) {
+            Message warnMsg{"SYS", "Server", userName, 
+                "你已在会话 " + sessionId + " 中"};
+            std::string warnStr = buildMessage(warnMsg);
+            send(clientSocket, warnStr.c_str(), warnStr.size(), 0);
+            return;
+        }
+        
+        // 加入 session
+        it->second.members.insert(userName);
+        std::cout << "[SYS] " << userName << " joined session " << sessionId << std::endl;
+    }
+    
+    // 通知该用户
+    Message successMsg{"SYS", "Server", userName, 
+        "已加入会话 " + sessionId};
+    std::string successStr = buildMessage(successMsg);
+    send(clientSocket, successStr.c_str(), successStr.size(), 0);
+    
+    // 通知 session 内其他成员
+    Message notifyMsg{"SYS", "Server", sessionId, 
+        userName + " 加入了会话"};
+    broadcastToSession(sessionId, buildMessage(notifyMsg), clientSocket);
+}
+
+// 处理离开会话
+void onLeaveSession(const Message &m, SOCKET clientSocket) {
+    std::string sessionId = m.accepter;
+    std::string userName = m.sender;
+    
+    removeUserFromSession(sessionId, userName);
+    
+    // 通知该用户
+    Message successMsg{"SYS", "Server", userName, 
+        "已离开会话 " + sessionId};
+    std::string successStr = buildMessage(successMsg);
+    send(clientSocket, successStr.c_str(), successStr.size(), 0);
+    
+    // 通知 session 内其他成员
+    Message notifyMsg{"SYS", "Server", sessionId, 
+        userName + " 离开了会话"};
+    broadcastToSession(sessionId, buildMessage(notifyMsg), INVALID_SOCKET);
 }
 
 void onExit(const Message&m ,SOCKET clientSocket){
@@ -136,46 +233,59 @@ void onExit(const Message&m ,SOCKET clientSocket){
     std::cout<<std::string ("[EXIT]"+m.sender)<<std::endl;
 }
 
-void onMsg(const Message & m,SOCKET clientSocket){
-    std::string strMsg=buildMessage(m);
-    // 查找目标 ServerSession
-    auto it = sessions.find(m.accepter);
-    if (it == sessions.end() && m.accepter != "ALL") {
-        // 私聊：自动创建私聊 ServerSession
-        createPrivateSession(m.sender, m.accepter);
-    }
+void onMsg(const Message & m, SOCKET clientSocket){
+    std::string sessionId = m.accepter;
+    std::string sender = m.sender;
     
-    // 向 ServerSession 内所有成员转发消息
-    broadcastToSession(m.accepter, buildMessage(m), clientSocket);
-    //处理不同类型的消息
-    if(m.accepter=="All" || m.accepter=="ALL"){
-        broadcast(strMsg,clientSocket);
-    }
-    else{
-        //从映射表找到对应的套接字并发送
-        SOCKET accepterSocket = INVALID_SOCKET;
-        {
-            std::lock_guard<std::mutex> lock(clientMutex);//加锁保护映射表
-            auto it = userSocket.find(m.accepter);
-            if (it != userSocket.end()) {
-                accepterSocket = it->second;
-            }
-        } // 锁在这里释放
+    // 验证 sender 是否在该 session 中
+    {
+        std::lock_guard<std::mutex> lock(clientMutex);
+        auto it = sessions.find(sessionId);
         
-        if (accepterSocket != INVALID_SOCKET) {
-            send(accepterSocket, strMsg.c_str(), strMsg.size(), 0);
-        } else {
-            std::cout << "[WARN] User " << m.accepter << " not found!" << std::endl;
+        if (it == sessions.end()) {
+            // Session 不存在
+            Message errMsg{"SYS", "Server", sender, 
+                "会话 " + sessionId + " 不存在，请先 /join " + sessionId};
+            std::string errStr = buildMessage(errMsg);
+            send(clientSocket, errStr.c_str(), errStr.size(), 0);
+            std::cout << "[WARN] Session " << sessionId << " not found for " << sender << std::endl;
+            return;
+        }
+        
+        if (!it->second.members.count(sender)) {
+            // 发送者不在该 session 中
+            Message errMsg{"SYS", "Server", sender, 
+                "你未加入会话 " + sessionId + "，请先 /join " + sessionId};
+            std::string errStr = buildMessage(errMsg);
+            send(clientSocket, errStr.c_str(), errStr.size(), 0);
+            std::cout << "[WARN] " << sender << " not in session " << sessionId << std::endl;
+            return;
         }
     }
-    //在终端(服务器处输出提示)
-    std::cout<<std::string("[MSG] From "+m.sender+" to "+m.accepter+": "+m.content)<<std::endl;
+    
+    // 如果是私聊且对方不在线，提示（但仍然发送）
+    if (sessionId != "ALL") {
+        std::lock_guard<std::mutex> lock(clientMutex);
+        if (userSocket.find(sessionId) == userSocket.end()) {
+            Message warnMsg{"SYS", "Server", sender, 
+                "用户 " + sessionId + " 当前离线，消息已发送"};
+            std::string warnStr = buildMessage(warnMsg);
+            send(clientSocket, warnStr.c_str(), warnStr.size(), 0);
+        }
+    }
+    
+    // 转发消息到 session（包括发送者自己，用于回显）
+    broadcastToSession(sessionId, buildMessage(m), INVALID_SOCKET);
+    
+    std::cout << "[MSG] " << sender << " -> " << sessionId << ": " << m.content << std::endl;
 }
 //处理Client消息的函数
 void handleMessage(const Message &m, SOCKET clientSocket){
-    if (m.type == "JOIN")      onJoin(m, clientSocket);
-    else if (m.type == "MSG")  onMsg(m, clientSocket);
-    else if (m.type == "EXIT") onExit(m, clientSocket);
+    if (m.type == "JOIN")           onJoin(m, clientSocket);
+    else if (m.type == "JOIN_SESSION") onJoinSession(m, clientSocket);
+    else if (m.type == "LEAVE_SESSION") onLeaveSession(m, clientSocket);
+    else if (m.type == "MSG")       onMsg(m, clientSocket);
+    else if (m.type == "EXIT")      onExit(m, clientSocket);
     else {
         std::cout << "[WARN] Unknown message type: " << m.type << std::endl;
     }
