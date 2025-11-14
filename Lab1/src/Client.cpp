@@ -9,14 +9,17 @@
 #include <iostream>
 #include <string>
 #include <thread>
+#include <ctime>
 #include <winsock2.h>
 #include "../include/Client.h"     // （预留接口）客户端类或辅助定义
+#include "../include/Storage.h"    // Storage 数据库类
 #pragma comment(lib, "ws2_32.lib")
 
 // 全局变量定义
 std::map<std::string, ClientSession> sessions;
 std::string currSessionId;
 std::string currUserName;
+Storage* storage = nullptr;  // 全局数据库对象
 
 // ==========================================================================
 // 线程函数：发送线程
@@ -166,10 +169,43 @@ void sendThread(SOCKET clientSocket, const std::string &userName) {
                 for (const auto &[sid, session] : sessions) {
                     std::string typeStr = (session.type == ST_GROUP) ? "群聊" : "私聊";
                     std::string current = (sid == currSessionId) ? " [当前]" : "";
+                    int unreadCount = 0;
+                    if (storage) {
+                        unreadCount = storage->getUnreadCount(sid);
+                    }
                     std::cout << sid << " [" << typeStr << "] - " 
-                              << session.history.size() << " 条消息" << current << std::endl;
+                              << session.history.size() << " 条消息" << current;
+                    if (unreadCount > 0) {
+                        std::cout << " (未读: " << unreadCount << ")";
+                    }
+                    std::cout << std::endl;
                 }
                 std::cout << "===================\n" << std::endl;
+                continue;
+            }
+            else if (command == "history") {
+                // 查看当前会话的历史记录
+                if (currSessionId.empty()) {
+                    std::cout << "[错误] 请先加入一个会话" << std::endl;
+                    continue;
+                }
+                
+                if (storage) {
+                    // 从数据库加载完整历史
+                    auto fullHistory = storage->loadHistory(currSessionId, 100);
+                    
+                    std::cout << "\n========== " << currSessionId << " 聊天记录 ==========" << std::endl;
+                    std::cout << "（共 " << fullHistory.size() << " 条）" << std::endl;
+                    std::cout << "-------------------------------------------" << std::endl;
+                    
+                    for (const auto& msg : fullHistory) {
+                        std::cout << "[" << msg.sender << "] " << msg.content << std::endl;
+                    }
+                    
+                    std::cout << "==========================================\n" << std::endl;
+                } else {
+                    std::cout << "[错误] 数据库未初始化" << std::endl;
+                }
                 continue;
             }
             else {
@@ -178,6 +214,7 @@ void sendThread(SOCKET clientSocket, const std::string &userName) {
                 std::cout << "  /leave <会话名>  - 离开会话" << std::endl;
                 std::cout << "  /switch <会话名> - 切换会话" << std::endl;
                 std::cout << "  /sessions        - 显示所有会话" << std::endl;
+                std::cout << "  /history         - 查看当前会话历史" << std::endl;
                 std::cout << "  /exit            - 退出程序" << std::endl;
                 continue;
             }
@@ -194,7 +231,16 @@ void sendThread(SOCKET clientSocket, const std::string &userName) {
         std::string sendData = buildMessage(msg);
         send(clientSocket, sendData.c_str(), (int)sendData.size(), 0);
         
-        // 本地保存（发送的消息也要记录）
+        // 🔥 保存到数据库
+        if (storage) {
+            SessionType type = sessions[currSessionId].type;
+            if (storage->saveMessage(msg, currSessionId, type)) {
+                // 更新本地会话的最后时间
+                sessions[currSessionId].lastReadTime = time(nullptr);
+            }
+        }
+        
+        // 本地内存也保存（发送的消息也要记录）
         sessions[currSessionId].history.push_back(msg);
     }
 
@@ -247,9 +293,29 @@ void recvThread(SOCKET clientSocket) {
                 ClientSession newSession;
                 newSession.id = msgSessionId;
                 newSession.type = (msgSessionId == "ALL") ? ST_GROUP : ST_PRIVATE;
+                newSession.lastReadTime = 0;
                 sessions[msgSessionId] = newSession;
+                
+                // 🔥 保存会话到数据库
+                if (storage) {
+                    storage->saveSession(msgSessionId, newSession.type);
+                }
             }
+            
+            // 保存到内存
             sessions[msgSessionId].history.push_back(m);
+            
+            // 🔥 保存到数据库
+            if (storage) {
+                SessionType type = sessions[msgSessionId].type;
+                storage->saveMessage(m, msgSessionId, type);
+                
+                // 如果是当前会话，更新已读时间
+                if (msgSessionId == currSessionId) {
+                    sessions[msgSessionId].lastReadTime = time(nullptr);
+                    storage->updateLastSyncTime(msgSessionId, time(nullptr));
+                }
+            }
             
             // 只显示当前 session 的消息
             if (msgSessionId == currSessionId) {
@@ -317,7 +383,47 @@ int main() {
     std::getline(std::cin, username);
     currUserName = username;  // 设置全局用户名变量
     
-    // 不初始化默认 session！用户需要主动 /join
+    // 🔥 初始化数据库
+    storage = new Storage(username);
+    if (!storage->init()) {
+        std::cout << "[ERROR] 数据库初始化失败！" << std::endl;
+        delete storage;
+        storage = nullptr;
+        closesocket(clientSocket);
+        WSACleanup();
+        return 0;
+    }
+    
+    std::cout << "\n[SYS] ✅ 数据库已加载" << std::endl;
+    
+    // 🔥 从数据库恢复历史会话
+    auto sessionList = storage->loadSessions();
+    if (sessionList.size() > 0) {
+        std::cout << "[SYS] 找到 " << sessionList.size() << " 个历史会话：" << std::endl;
+        
+        for (const auto& sid : sessionList) {
+            ClientSession sess;
+            sess.id = sid;
+            sess.type = storage->getSessionType(sid);
+            
+            // 加载最近 10 条消息作为预览
+            sess.history = storage->loadHistory(sid, 10);
+            
+            // 记录最后同步时间
+            sess.lastReadTime = storage->getLastMessageTime(sid);
+            
+            sessions[sid] = sess;
+            
+            std::string typeStr = (sess.type == ST_GROUP) ? "群聊" : "私聊";
+            std::cout << "  - " << sid << " [" << typeStr << "] " 
+                      << "(" << sess.history.size() << " 条历史)" << std::endl;
+        }
+        std::cout << "[提示] 使用 /switch <会话名> 切换到历史会话" << std::endl;
+    } else {
+        std::cout << "[SYS] 这是你首次使用，开始新的聊天吧！" << std::endl;
+    }
+    
+    // 不自动切换到任何 session，用户需要主动 /join
     currSessionId = "";  // 空字符串表示未加入任何 session
 
     // 使用两个独立线程同时发送和接收数据，实现双向通信
@@ -330,6 +436,13 @@ int main() {
     shutdown(clientSocket, SD_BOTH); // 通知服务器结束发送接收
     closesocket(clientSocket);      // 真正关闭
     receiver.join();
+
+    // 🔥 清理数据库资源
+    if (storage) {
+        storage->close();
+        delete storage;
+        storage = nullptr;
+    }
 
     // --------------------- 第七阶段：释放网络资源 ---------------------
     // 所有通信结束后，通过 WSACleanup() 释放 Winsock 资源。
