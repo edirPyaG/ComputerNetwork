@@ -1,0 +1,32 @@
+# CMake 构建目录
+build/
+build_*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+# 可执行文件
+*.exe
+*.out
+
+# 编译产物
+*.o
+*.obj
+*.a
+*.lib
+
+# 测试文件
+test_file.dat
+received_file.dat
+test_results/
+
+# IDE 文件
+.vs/
+.vscode/settings.json
+.vscode/launch.json
+*.user
+*.suo
+
+# 临时文件
+*.tmp
+*.log
