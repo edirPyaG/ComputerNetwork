@@ -116,7 +116,8 @@ int main(int argc, char* argv[]) {
     server_addr.sin_port = htons(local_port);
 
     if (bind(sock, (sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR) {
-        cerr << "Bind failed" << endl;
+        cerr << "Bind failed on " << local_ip << ":" << local_port << endl;
+        cerr << "Error code: " << WSAGetLastError() << endl;
         closesocket(sock);
         WSACleanup();
         return 1;
