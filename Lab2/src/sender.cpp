@@ -96,6 +96,7 @@ void timer_thread_func() {
             cout << cwnd << endl;
             
             send_packet(oldest.pkt);
+            stats.retransmitted_packets++;
             oldest.time_sent = now;
             stats.timeouts++;
         }
@@ -235,6 +236,9 @@ int main(int argc, char* argv[]) {
         cerr << "请使用正确的参数格式" << endl;
         return 1;
     }
+
+    // Allow multiple packets in flight from the start (avoids single-packet pipe)
+    cwnd = min<uint32_t>(static_cast<uint32_t>(SEND_WINDOW_SIZE) * MSS, static_cast<uint32_t>(MSS * 10));
     
     cout << "========== RDT Sender ==========" << endl;
     cout << "Send Window Size: " << SEND_WINDOW_SIZE << " packets" << endl;
