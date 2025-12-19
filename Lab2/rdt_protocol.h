@@ -15,7 +15,7 @@
 #define MSS 1024                    // Maximum Segment Size
 #define DEFAULT_PORT 8888
 #define DEFAULT_IP "127.0.0.1"
-#define TIMEOUT_MS 500              // Retransmission timeout
+#define TIMEOUT_MS 300              // Retransmission timeout (Adjusted: 50ms was too aggressive)
 #define MAX_SACK_BLOCKS 8           // Maximum SACK blocks
 
 // Flags

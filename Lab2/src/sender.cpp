@@ -1,3 +1,4 @@
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
 #include "../include/rdt_protocol.h"
 #include <iostream>
 #include <fstream>
@@ -28,6 +29,10 @@ atomic<uint32_t> base(0);
 atomic<uint32_t> next_seq_num(0);
 atomic<bool> connection_active(true);
 
+// NewReno State
+atomic<uint32_t> recover(0);
+atomic<bool> in_fast_recovery(false);
+
 // Send Buffer
 struct SentPacket {
     Packet pkt;
@@ -52,9 +57,9 @@ void send_packet(Packet& pkt) {
     bool is_data_packet = pkt.header.len > 0;
     
     if (is_control_packet || !is_data_packet || !should_drop_packet()) {
-        sendto(sock, (char*)&pkt, pkt_size, 0, (sockaddr*)&server_addr, sizeof(server_addr));
+        sendto(sock, (char*)&pkt, static_cast<int>(pkt_size), 0, (sockaddr*)&server_addr, sizeof(server_addr));
     } else {
-        cout << "[Sender] Simulated packet loss at seq=" << pkt.header.seq << endl;
+        // cout << "[Sender] Simulated packet loss at seq=" << pkt.header.seq << endl;
     }
     
     log_packet("SEND", pkt.header, verbose);
@@ -85,18 +90,30 @@ void timer_thread_func() {
         if (!oldest.acked && 
             chrono::duration_cast<chrono::milliseconds>(now - oldest.time_sent).count() > TIMEOUT_MS) {
             
-            cout << "[Sender] Timeout! seq=" << oldest.pkt.header.seq 
-                 << " cwnd=" << cwnd << " -> ";
+            cout << "[Sender] Timeout! seq=" << oldest.pkt.header.seq  << " cwnd=" << cwnd << endl;
             
             // Timeout: ssthresh = cwnd/2, cwnd = MSS
             ssthresh = max((uint32_t)MSS, (uint32_t)cwnd / 2);
-            cwnd = MSS;
+            cwnd = 4 * MSS; // Optimization: Start with larger window after timeout
             dupACKcount = 0;
+            in_fast_recovery = false; // Reset NewReno state on timeout
             
-            cout << cwnd << endl;
+            // cout << cwnd << endl;
             
+            // send_packet(oldest.pkt); // Only sending the oldest might not be enough if pipe is empty, but standard Reno says Retransmit First Unacked.
+            
+            // CRITICAL FIX: To prevent domino timeouts for subsequent packets in the window:
+            // When a timeout occurs, we must assume the network state has changed or is unknown.
+            // We reset the timers for ALL outstanding packets to prevent them from timing out 
+            // instantly one after another as they reach the front of the queue.
             send_packet(oldest.pkt);
-            oldest.time_sent = now;
+            stats.retransmitted_packets++;
+            
+            for (auto& item : send_buffer) {
+                item.time_sent = now;
+            }
+            // oldest.time_sent = now; // Handled by loop above
+            
             stats.timeouts++;
         }
     }
@@ -143,49 +160,97 @@ void listener_thread() {
                 cout << "[Sender] New ACK=" << ack << " cwnd=" << cwnd;
             }
             
-            base = ack;
-            last_ack = ack;
-            dupACKcount = 0;
-
-            // Remove acked packets
-            while (!send_buffer.empty()) {
-                uint32_t pkt_end = send_buffer.front().pkt.header.seq + 
-                                   send_buffer.front().pkt.header.len;
-                if (pkt_end <= base) {
-                    send_buffer.erase(send_buffer.begin());
-                } else {
-                    break;
+            // Remove acked packets from buffer
+            {
+                // We use a temporary lock if strictly needed, but careful about lock order.
+                // Assuming buffer_mutex is already locked by the caller (Wait, listener_thread locks it at line 122)
+                // Yes, buffer_mutex is locked from line 122 in original code.
+                // Note: The original code context for this replacement is inside listener_thread logic.
+                // However, listener_thread locks buffer_mutex at line 122. This block starts around line 140.
+                // So we are inside the lock.
+                
+                while (!send_buffer.empty()) {
+                    uint32_t pkt_end = send_buffer.front().pkt.header.seq + 
+                                       send_buffer.front().pkt.header.len;
+                    if (pkt_end <= ack) {
+                        send_buffer.erase(send_buffer.begin());
+                    } else {
+                        break;
+                    }
+                }
+                
+                // CRITICAL FIX (RFC 6298): Restart retransmission timer on New ACK
+                // Give the new oldest packet a fresh timeout window.
+                if (!send_buffer.empty()) {
+                    send_buffer.front().time_sent = chrono::steady_clock::now();
                 }
             }
 
-            // Congestion Control: RENO
-            if (cwnd < ssthresh) {
-                // Slow Start
-                cwnd += MSS;
-                if (verbose) cout << " -> " << cwnd << " (Slow Start)" << endl;
+            // NewReno Logic
+            if (in_fast_recovery) {
+                if (ack >= recover) {
+                    // Full ACK: Covers all data sent before Fast Recovery initiated
+                    if (verbose) cout << " -> (Full ACK, Exit Fast Recovery)" << endl;
+                    
+                    in_fast_recovery = false;
+                    dupACKcount = 0;
+                    
+                    // Exit Fast Recovery: set cwnd to ssthresh (or FlightSize)
+                    cwnd = ssthresh.load(); 
+                } else {
+                    // Partial ACK: Covers new data, but not all data up to 'recover'
+                    if (verbose) cout << " -> (Partial ACK, Stay in Fast Recovery)" << endl;
+                    
+                    // Improvements for Partial ACK:
+                    // 1. Deflate cwnd by amount of new data acknowledged? (Optional, kept simple here to maintain throughput)
+                    // 2. IMMEDIATE RETRANSMIT of the next missing segment (which starts at 'ack')
+                    //    This is the key fix for NewReno.
+                    cout << "[Sender] Partial ACK received. Retransmitting seq=" << ack << endl;
+                    retransmit_packet(ack);
+                    
+                    // Do NOT exit Fast Recovery
+                    // Do NOT reset dupACKcount logic effectively
+                }
             } else {
-                // Congestion Avoidance
-                uint32_t increment = max((uint32_t)1, MSS * MSS / cwnd);
-                cwnd += increment;
-                if (verbose) cout << " -> " << cwnd << " (Congestion Avoidance)" << endl;
+                // Standard Reno (Not in Fast Recovery)
+                base = ack;
+                last_ack = ack;
+                dupACKcount = 0;
+
+                // Congestion Control: Slow Start / Congestion Avoidance
+                if (cwnd < ssthresh) {
+                    cwnd += MSS; // Slow Start
+                    if (verbose) cout << " -> " << cwnd << " (Slow Start)" << endl;
+                } else {
+                    uint32_t increment = max((uint32_t)1, MSS * MSS / cwnd);
+                    cwnd += increment; // Congestion Avoidance
+                    if (verbose) cout << " -> " << cwnd << " (Congestion Avoidance)" << endl;
+                }
             }
+            
+            base = ack; // Ensure base is updated
+            last_ack = ack;
+
         } else if (ack == last_ack) {
             // Duplicate ACK
             dupACKcount++;
             stats.duplicate_acks++;
             
-            if (dupACKcount == 3) {
-                // Fast Retransmit & Fast Recovery
-                cout << "[Sender] 3 Dup ACKs! Fast Retransmit seq=" << ack 
+            if (dupACKcount == 2) {
+                // Fast Retransmit & Enter Fast Recovery
+                cout << "[Sender] 2 Dup ACKs! Fast Retransmit seq=" << ack 
                      << " cwnd=" << cwnd << " -> ";
                 
+                recover = next_seq_num.load(); // Record the recovery point (NewReno)
+                in_fast_recovery = true;
+                
                 ssthresh = max((uint32_t)MSS, (uint32_t)cwnd / 2);
-                cwnd = ssthresh + 3 * MSS;
+                cwnd = ssthresh.load() + 3 * MSS;
                 
                 cout << cwnd << endl;
                 
                 retransmit_packet(ack);
-            } else if (dupACKcount > 3) {
+            } else if (dupACKcount > 2) {
                 // Fast Recovery: inflate cwnd
                 cwnd += MSS;
             }
@@ -235,6 +300,9 @@ int main(int argc, char* argv[]) {
         cerr << "请使用正确的参数格式" << endl;
         return 1;
     }
+
+    // Allow multiple packets in flight from the start (avoids single-packet pipe)
+    cwnd = min<uint32_t>(static_cast<uint32_t>(SEND_WINDOW_SIZE) * MSS, static_cast<uint32_t>(MSS * 10));
     
     cout << "========== RDT Sender ==========" << endl;
     cout << "Send Window Size: " << SEND_WINDOW_SIZE << " packets" << endl;
@@ -280,16 +348,34 @@ int main(int argc, char* argv[]) {
     
     Packet syn_ack;
     int len = sizeof(server_addr);
+    // Handshake Timeout Handling
+    auto handshake_start = chrono::steady_clock::now();
     while (true) {
-        int res = recvfrom(sock, (char*)&syn_ack, sizeof(Packet), 0, 
-                          (sockaddr*)&server_addr, &len);
-        if (res > 0 && (syn_ack.header.flags & (FLAG_SYN | FLAG_ACK)) && 
-            syn_ack.header.ack == 1) {
-            cout << "[Sender] Handshake complete." << endl;
-            base = 1;
-            next_seq_num = 1;
-            rwnd = syn_ack.header.window_size * MSS;
-            break;
+        fd_set read_fds;
+        FD_ZERO(&read_fds);
+        FD_SET(sock, &read_fds);
+        
+        struct timeval timeout;
+        timeout.tv_sec = 0;
+        timeout.tv_usec = TIMEOUT_MS * 1000; // 300ms
+        
+        int activity = select(0, &read_fds, NULL, NULL, &timeout);
+        
+        if (activity > 0) {
+            int res = recvfrom(sock, (char*)&syn_ack, sizeof(Packet), 0, 
+                              (sockaddr*)&server_addr, &len);
+            if (res > 0 && (syn_ack.header.flags & (FLAG_SYN | FLAG_ACK)) && 
+                syn_ack.header.ack == 1) {
+                cout << "[Sender] Handshake complete." << endl;
+                base = 1;
+                next_seq_num = 1;
+                rwnd = syn_ack.header.window_size * MSS;
+                break;
+            }
+        } else {
+            // Timeout reached, retransmit SYN
+            cout << "[Sender] Handshake timeout. Retransmitting SYN..." << endl;
+            send_packet(syn_pkt);
         }
     }
     
@@ -333,14 +419,14 @@ int main(int argc, char* argv[]) {
     char buffer[MSS];
     
     while (infile.read(buffer, MSS) || infile.gcount() > 0) {
-        int bytes_read = infile.gcount();
+        int bytes_read = static_cast<int>(infile.gcount());
         
         // Flow & Congestion Control
         while (true) {
             uint32_t inflight = next_seq_num - base;
             uint32_t win = min((uint32_t)SEND_WINDOW_SIZE * MSS, min((uint32_t)cwnd, (uint32_t)rwnd));
             if (inflight < win) break;
-            this_thread::sleep_for(chrono::milliseconds(1));
+            this_thread::yield(); // Better than sleep for high throughput
         }
 
         Packet data_pkt;
@@ -355,6 +441,9 @@ int main(int argc, char* argv[]) {
             send_buffer.push_back({data_pkt, chrono::steady_clock::now(), false});
         }
         
+        // PACING: Removed 500us sleep to restore throughput
+        // this_thread::sleep_for(chrono::microseconds(500));
+        
         stats.total_packets++;
         stats.total_bytes += bytes_read;
         next_seq_num += bytes_read;
@@ -367,8 +456,8 @@ int main(int argc, char* argv[]) {
     }
 
     auto transmission_end = chrono::steady_clock::now();
-    stats.transmission_time_ms = chrono::duration_cast<chrono::milliseconds>(
-        transmission_end - transmission_start).count();
+    stats.transmission_time_ms = static_cast<double>(chrono::duration_cast<chrono::milliseconds>(
+        transmission_end - transmission_start).count());
 
     // Teardown
     cout << "[Sender] Sending FIN..." << endl;
