@@ -236,7 +236,11 @@ void listener_thread() {
             dupACKcount++;
             stats.duplicate_acks++;
             
+<<<<<<< HEAD
             if (dupACKcount == 3) {
+=======
+            if (dupACKcount == 2) {
+>>>>>>> origin/main
                 // Fast Retransmit & Enter Fast Recovery
                 cout << "[Sender] 2 Dup ACKs! Fast Retransmit seq=" << ack 
                      << " cwnd=" << cwnd << " -> ";
@@ -250,7 +254,11 @@ void listener_thread() {
                 cout << cwnd << endl;
                 
                 retransmit_packet(ack);
+<<<<<<< HEAD
             } else if (dupACKcount > 3) {
+=======
+            } else if (dupACKcount > 2) {
+>>>>>>> origin/main
                 // Fast Recovery: inflate cwnd
                 cwnd += MSS;
             }
@@ -459,17 +467,23 @@ int main(int argc, char* argv[]) {
     stats.transmission_time_ms = static_cast<double>(chrono::duration_cast<chrono::milliseconds>(
         transmission_end - transmission_start).count());
 
+<<<<<<< HEAD
     
     cout << "[Sender] Starting 4-way handshake to close connection..." << endl;
     
 
     cout << "[Sender] Step 1: Sending FIN..." << endl;
+=======
+    // Teardown
+    cout << "[Sender] Sending FIN..." << endl;
+>>>>>>> origin/main
     Packet fin_pkt;
     memset(&fin_pkt, 0, sizeof(fin_pkt));
     fin_pkt.header.seq = next_seq_num;
     fin_pkt.header.flags = FLAG_FIN;
     send_packet(fin_pkt);
 
+<<<<<<< HEAD
     cout << "[Sender] Step 2: Waiting for ACK of FIN..." << endl;
     Packet ack_of_fin;
     bool received_ack = false;
@@ -544,6 +558,12 @@ int main(int argc, char* argv[]) {
     this_thread::sleep_for(chrono::milliseconds(200));
     connection_active = false;
 
+=======
+    this_thread::sleep_for(chrono::seconds(1));
+    connection_active = false;
+
+    // Print statistics
+>>>>>>> origin/main
     stats.print();
 
     closesocket(sock);
