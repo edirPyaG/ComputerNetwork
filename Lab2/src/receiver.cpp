@@ -5,6 +5,8 @@
 #include <set>
 #include <vector>
 #include <ctime>
+#include <thread>
+#include <chrono>
 
 using namespace std;
 
@@ -167,19 +169,36 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
-        // Handle FIN
+       
         if (recv_pkt.header.flags & FLAG_FIN) {
-            cout << "[Receiver] FIN received. Closing connection..." << endl;
+            cout << "[Receiver] Step 1: FIN received from sender" << endl;
             
-            Packet fin_ack;
-            memset(&fin_ack, 0, sizeof(fin_ack));
-            fin_ack.header.ack = recv_pkt.header.seq + 1;
-            fin_ack.header.flags = FLAG_ACK | FLAG_FIN;
-            fin_ack.header.checksum = calculate_checksum(&fin_ack, sizeof(RDTHeader));
-            // FIN-ACK should not be dropped
-            sendto(sock, (char*)&fin_ack, sizeof(RDTHeader), 0, 
+            cout << "[Receiver] Step 2: Sending ACK of FIN..." << endl;
+            Packet ack_pkt;
+            memset(&ack_pkt, 0, sizeof(ack_pkt));
+            ack_pkt.header.ack = recv_pkt.header.seq + 1;  
+            ack_pkt.header.flags = FLAG_ACK;               
+            ack_pkt.header.checksum = calculate_checksum(&ack_pkt, sizeof(RDTHeader));
+            sendto(sock, (char*)&ack_pkt, sizeof(RDTHeader), 0, 
                    (sockaddr*)&client_addr, client_addr_len);
-            break;
+            
+
+            this_thread::sleep_for(chrono::milliseconds(100));
+            
+            cout << "[Receiver] Step 3: Sending FIN to sender..." << endl;
+            Packet fin_pkt;
+            memset(&fin_pkt, 0, sizeof(fin_pkt));
+            fin_pkt.header.seq = expected_seq;             
+            fin_pkt.header.flags = FLAG_FIN;               
+            fin_pkt.header.checksum = calculate_checksum(&fin_pkt, sizeof(RDTHeader));
+            sendto(sock, (char*)&fin_pkt, sizeof(RDTHeader), 0, 
+                   (sockaddr*)&client_addr, client_addr_len);
+            
+            cout << "[Receiver] Step 4: Waiting for final ACK..." << endl;
+            this_thread::sleep_for(chrono::milliseconds(200));
+            
+            cout << "[Receiver] 4-way handshake complete. Connection closed." << endl;
+            break;  
         }
 
         // Data Processing

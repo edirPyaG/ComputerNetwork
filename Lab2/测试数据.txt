@@ -1,0 +1,44 @@
+1.jpg
+========== Transmission Statistics ==========
+Total Bytes Sent: 1857353 bytes
+Total Packets: 1814
+Retransmitted Packets: 57
+Duplicate ACKs: 425
+Timeouts: 1
+Transmission Time: 77.33 seconds
+Average Throughput: 0.192148 Mbps
+=============================================
+
+
+1.jpg
+========== Transmission Statistics ==========
+Total Bytes Sent: 1857353 bytes
+Total Packets: 1814
+Retransmitted Packets: 58
+Duplicate ACKs: 424
+Timeouts: 2
+Transmission Time: 77.187 seconds
+Average Throughput: 0.192504 Mbps
+=============================================
+
+2.jpg
+========== Transmission Statistics ==========
+Total Bytes Sent: 5898505 bytes
+Total Packets: 5761
+Retransmitted Packets: 180
+Duplicate ACKs: 1358
+Timeouts: 0
+Transmission Time: 193.242 seconds
+Average Throughput: 0.244191 Mbps
+=============================================
+
+3.jpg
+========== Transmission Statistics ==========
+Total Bytes Sent: 11968994 bytes
+Total Packets: 11689
+Retransmitted Packets: 366
+Duplicate ACKs: 2748
+Timeouts: 0
+Transmission Time: 446.126 seconds
+Average Throughput: 0.21463 Mbps
+=============================================

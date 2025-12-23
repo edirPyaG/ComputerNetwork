@@ -236,7 +236,7 @@ void listener_thread() {
             dupACKcount++;
             stats.duplicate_acks++;
             
-            if (dupACKcount == 2) {
+            if (dupACKcount == 3) {
                 // Fast Retransmit & Enter Fast Recovery
                 cout << "[Sender] 2 Dup ACKs! Fast Retransmit seq=" << ack 
                      << " cwnd=" << cwnd << " -> ";
@@ -250,7 +250,7 @@ void listener_thread() {
                 cout << cwnd << endl;
                 
                 retransmit_packet(ack);
-            } else if (dupACKcount > 2) {
+            } else if (dupACKcount > 3) {
                 // Fast Recovery: inflate cwnd
                 cwnd += MSS;
             }
@@ -459,18 +459,91 @@ int main(int argc, char* argv[]) {
     stats.transmission_time_ms = static_cast<double>(chrono::duration_cast<chrono::milliseconds>(
         transmission_end - transmission_start).count());
 
-    // Teardown
-    cout << "[Sender] Sending FIN..." << endl;
+    
+    cout << "[Sender] Starting 4-way handshake to close connection..." << endl;
+    
+
+    cout << "[Sender] Step 1: Sending FIN..." << endl;
     Packet fin_pkt;
     memset(&fin_pkt, 0, sizeof(fin_pkt));
     fin_pkt.header.seq = next_seq_num;
     fin_pkt.header.flags = FLAG_FIN;
     send_packet(fin_pkt);
 
-    this_thread::sleep_for(chrono::seconds(1));
+    cout << "[Sender] Step 2: Waiting for ACK of FIN..." << endl;
+    Packet ack_of_fin;
+    bool received_ack = false;
+    auto fin_start = chrono::steady_clock::now();
+    
+    while (chrono::duration_cast<chrono::seconds>(chrono::steady_clock::now() - fin_start).count() < 3) {
+        fd_set read_fds;
+        FD_ZERO(&read_fds);
+        FD_SET(sock, &read_fds);
+        
+        struct timeval timeout;
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 500000; // 500ms
+        
+        int activity = select(0, &read_fds, NULL, NULL, &timeout);
+        
+        if (activity > 0) {
+            int res = recvfrom(sock, (char*)&ack_of_fin, sizeof(Packet), 0, NULL, NULL);
+            if (res > 0 && (ack_of_fin.header.flags & FLAG_ACK) && 
+                ack_of_fin.header.ack == next_seq_num + 1) {
+                cout << "[Sender] Step 2: Received ACK of FIN" << endl;
+                received_ack = true;
+                break;
+            }
+        }
+    }
+    
+    if (!received_ack) {
+        cout << "[Sender] Warning: Did not receive ACK of FIN, continuing anyway..." << endl;
+    }
+
+    cout << "[Sender] Step 3: Waiting for receiver's FIN..." << endl;
+    Packet recv_fin;
+    bool received_fin = false;
+    fin_start = chrono::steady_clock::now();
+    
+    while (chrono::duration_cast<chrono::seconds>(chrono::steady_clock::now() - fin_start).count() < 3) {
+        fd_set read_fds;
+        FD_ZERO(&read_fds);
+        FD_SET(sock, &read_fds);
+        
+        struct timeval timeout;
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 500000; // 500ms
+        
+        int activity = select(0, &read_fds, NULL, NULL, &timeout);
+        
+        if (activity > 0) {
+            int res = recvfrom(sock, (char*)&recv_fin, sizeof(Packet), 0, NULL, NULL);
+            if (res > 0 && (recv_fin.header.flags & FLAG_FIN)) {
+                cout << "[Sender] Step 3: Received FIN from receiver" << endl;
+                received_fin = true;
+                
+                cout << "[Sender] Step 4: Sending ACK of receiver's FIN..." << endl;
+                Packet final_ack;
+                memset(&final_ack, 0, sizeof(final_ack));
+                final_ack.header.seq = next_seq_num + 1;
+                final_ack.header.ack = recv_fin.header.seq + 1;
+                final_ack.header.flags = FLAG_ACK;
+                send_packet(final_ack);
+                
+                cout << "[Sender] 4-way handshake complete. Connection closed." << endl;
+                break;
+            }
+        }
+    }
+    
+    if (!received_fin) {
+        cout << "[Sender] Warning: Did not receive FIN from receiver" << endl;
+    }
+
+    this_thread::sleep_for(chrono::milliseconds(200));
     connection_active = false;
 
-    // Print statistics
     stats.print();
 
     closesocket(sock);
