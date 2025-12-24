@@ -123,7 +123,27 @@ Average Throughput: 0.273281 Mbps
 2.jpg
 略,应该和1.jpg差不多
 
+//以下是丢包率0%,延时5ms
+========== Transmission Statistics ==========
+Total Bytes Sent: 1857353 bytes
+Total Packets: 1814
+Retransmitted Packets: 10
+Duplicate ACKs: 10
+Timeouts: 10
+Transmission Time: 37.793 seconds
+Average Throughput: 0.393163 Mbps
+=============================================
+
 //以下的测试数据在丢包率0.1%, 延时0ms
+========== Transmission Statistics ==========
+Total Bytes Sent: 1857353 bytes
+Total Packets: 1814
+Retransmitted Packets: 2
+Duplicate ACKs: 45
+Timeouts: 1
+Transmission Time: 14.579 seconds
+Average Throughput: 1.01919 Mbps
+=============================================
 
 
 //以下的测试数据在丢包率0.1%, 延时5ms
