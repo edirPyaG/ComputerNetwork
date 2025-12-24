@@ -10,6 +10,8 @@ Average Throughput: 0.192148 Mbps
 =============================================
 
 
+//以下测试数据是在丢包率3%, 延时 5 ms情况下测试得到(使用router)
+
 1.jpg
 ========== Transmission Statistics ==========
 Total Bytes Sent: 1857353 bytes
@@ -41,4 +43,156 @@ Duplicate ACKs: 2748
 Timeouts: 0
 Transmission Time: 446.126 seconds
 Average Throughput: 0.21463 Mbps
+=============================================
+
+
+
+//以下测试数据是在丢包率3%, 延时 3ms情况下测试得到
+1.jpg
+========== Transmission Statistics ==========
+Total Bytes Sent: 1857353 bytes
+Total Packets: 1814
+Retransmitted Packets: 56
+Duplicate ACKs: 459
+Timeouts: 0
+Transmission Time: 53.469 seconds
+Average Throughput: 0.277896 Mbps
+=============================================
+2.jpg
+========== Transmission Statistics ==========
+Total Bytes Sent: 5898505 bytes
+Total Packets: 5761
+Retransmitted Packets: 180
+Duplicate ACKs: 1358
+Timeouts: 0
+Transmission Time: 184.642 seconds
+Average Throughput: 0.255565 Mbps
+=============================================
+3.jpg
+略,应该和2.jpg差不多
+
+//以下的测试数据在丢包率3%, 延时1ms
+========== Transmission Statistics ==========
+Total Bytes Sent: 1857353 bytes
+Total Packets: 1814
+Retransmitted Packets: 58
+Duplicate ACKs: 463
+Timeouts: 2
+Transmission Time: 51.958 seconds
+Average Throughput: 0.285978 Mbps
+=============================================
+其他的类似
+
+
+//以下的测试数据在丢包率2%, 延时5ms
+1.jpg
+========== Transmission Statistics ==========
+Total Bytes Sent: 1857353 bytes
+Total Packets: 1814
+Retransmitted Packets: 38
+Duplicate ACKs: 378
+Timeouts: 1
+Transmission Time: 54.924 seconds
+Average Throughput: 0.270534 Mbps
+=============================================
+2.jpg
+略,应该和1.jpg差不多
+
+//以下的测试数据在丢包率1%, 延时5ms
+========== Transmission Statistics ==========
+Total Bytes Sent: 1857353 bytes
+Total Packets: 1814
+Retransmitted Packets: 19
+Duplicate ACKs: 264
+Timeouts: 1
+Transmission Time: 53.896 seconds
+Average Throughput: 0.275694 Mbps
+=============================================
+
+
+//以下的测试数据在丢包率0.5%, 延时5ms
+========== Transmission Statistics ==========
+Total Bytes Sent: 1857353 bytes
+Total Packets: 1814
+Retransmitted Packets: 19
+Duplicate ACKs: 139
+Timeouts: 10
+Transmission Time: 54.372 seconds
+Average Throughput: 0.273281 Mbps
+=============================================
+2.jpg
+略,应该和1.jpg差不多
+
+//以下的测试数据在丢包率0.1%, 延时0ms
+
+
+//以下的测试数据在丢包率0.1%, 延时5ms
+1.jpg
+========== Transmission Statistics ==========
+Total Bytes Sent: 1857353 bytes
+Total Packets: 1814
+Retransmitted Packets: 19
+Duplicate ACKs: 31
+Timeouts: 18
+Transmission Time: 54.583 seconds
+Average Throughput: 0.272224 Mbps
+=============================================
+
+//以下的测试数据在丢包率0.1% 延时 20ms
+========== Transmission Statistics ==========
+Total Bytes Sent: 1857353 bytes
+Total Packets: 1814
+Retransmitted Packets: 41
+Duplicate ACKs: 49
+Timeouts: 40
+Transmission Time: 84.434 seconds
+Average Throughput: 0.175982 Mbps
+=============================================
+
+
+//以下的测试数据在丢包率0.1% 延时 100ms
+========== Transmission Statistics ==========
+Total Bytes Sent: 1857353 bytes
+Total Packets: 1814
+Retransmitted Packets: 303
+Duplicate ACKs: 310
+Timeouts: 301
+Transmission Time: 263.065 seconds
+Average Throughput: 0.0564835 Mbps
+=============================================
+
+
+
+//以下测试数据为不经过router
+
+1.jpg
+========== Transmission Statistics ==========
+Total Bytes Sent: 1857353 bytes
+Total Packets: 1814
+Retransmitted Packets: 0
+Duplicate ACKs: 0
+Timeouts: 0
+Transmission Time: 0.019 seconds
+Average Throughput: 782.043 Mbps
+=============================================
+
+2.jpg
+========== Transmission Statistics ==========
+Total Bytes Sent: 5898505 bytes
+Total Packets: 5761
+Retransmitted Packets: 0
+Duplicate ACKs: 0
+Timeouts: 0
+Transmission Time: 0.054 seconds
+Average Throughput: 873.853 Mbps
+=============================================
+3.jpg
+========== Transmission Statistics ==========
+Total Bytes Sent: 11968994 bytes
+Total Packets: 11689
+Retransmitted Packets: 0
+Duplicate ACKs: 0
+Timeouts: 0
+Transmission Time: 0.173 seconds
+Average Throughput: 553.479 Mbps
 =============================================

@@ -30,3 +30,12 @@ test_results/
 # 临时文件
 *.tmp
 *.log
+
+# 大文件和压缩包（防止超过 GitHub 100MB 限制）
+*.zip
+*.rar
+*.7z
+*.tar.gz
+*.iso
+*.dmg
+*.pkg
