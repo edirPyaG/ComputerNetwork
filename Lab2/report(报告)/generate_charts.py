@@ -1,242 +1,124 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-RDT协议性能测试数据可视化脚本
-生成丢包率、延时对性能影响的对比图表
+Visualization script for RDT performance metrics.
+Generates English charts for academic reporting.
 """
 
 import matplotlib.pyplot as plt
-import matplotlib
 import numpy as np
 
-# 设置中文字体支持
-matplotlib.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
-matplotlib.rcParams['axes.unicode_minus'] = False
+# Set plotting style
+plt.style.use('seaborn-v0_8-muted')
+plt.rcParams.update({'font.size': 12})
 
-# 设置绘图风格
-plt.style.use('seaborn-v0_8-darkgrid')
-
-def plot_loss_rate_impact():
-    """绘制丢包率对性能的影响（延时固定5ms）"""
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    fig.suptitle('丢包率对RDT协议性能的影响（延时=5ms）', fontsize=16, fontweight='bold')
+def save_single_plot(x, y, xlabel, ylabel, title, filename, color, marker='o', is_bar=False, is_log=False):
+    plt.figure(figsize=(10, 6))
+    if is_bar:
+        bars = plt.bar(x, y, color=color, alpha=0.8, edgecolor='black')
+        for bar in bars:
+            height = bar.get_height()
+            plt.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{height:.2f}' if height < 100 else f'{int(height)}',
+                    ha='center', va='bottom', fontsize=10, fontweight='bold')
+    else:
+        plt.plot(x, y, marker=marker, linewidth=2.5, markersize=10, color=color)
+        for i, v in enumerate(y):
+            plt.text(x[i], v, f'{v:.3f}' if v < 1 else f'{v:.1f}', ha='center', va='bottom', fontsize=10)
     
-    # 数据来源：测试数据.txt
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    if is_log:
+        plt.yscale('log')
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.title(title, fontweight='bold')
+    plt.tight_layout()
+    plt.savefig(filename, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"✓ Saved: {filename}")
+
+def generate_all_plots():
+    # 1. Loss Rate Impact Data (Delay = 5ms)
     loss_rates = [0, 0.5, 1, 2, 3]
-    throughputs = [0.393, 0.273, 0.276, 0.271, 0.193]  # Mbps
-    transmission_times = [37.79, 54.37, 53.90, 54.92, 77.19]  # seconds
-    retransmissions = [10, 19, 19, 38, 58]
-    timeouts = [10, 10, 1, 1, 2]
-    
-    # 子图1：吞吐率
-    axes[0, 0].plot(loss_rates, throughputs, marker='o', linewidth=2, markersize=8, color='#2E86AB')
-    axes[0, 0].set_xlabel('丢包率 (%)', fontsize=12)
-    axes[0, 0].set_ylabel('吞吐率 (Mbps)', fontsize=12)
-    axes[0, 0].set_title('吞吐率随丢包率变化', fontsize=13, fontweight='bold')
-    axes[0, 0].grid(True, alpha=0.3)
-    for i, v in enumerate(throughputs):
-        axes[0, 0].text(loss_rates[i], v + 0.01, f'{v:.3f}', ha='center', fontsize=9)
-    
-    # 子图2：传输时间
-    axes[0, 1].plot(loss_rates, transmission_times, marker='s', linewidth=2, markersize=8, color='#A23B72')
-    axes[0, 1].set_xlabel('丢包率 (%)', fontsize=12)
-    axes[0, 1].set_ylabel('传输时间 (秒)', fontsize=12)
-    axes[0, 1].set_title('传输时间随丢包率变化', fontsize=13, fontweight='bold')
-    axes[0, 1].grid(True, alpha=0.3)
-    for i, v in enumerate(transmission_times):
-        axes[0, 1].text(loss_rates[i], v + 1.5, f'{v:.2f}s', ha='center', fontsize=9)
-    
-    # 子图3：重传包数
-    axes[1, 0].bar(loss_rates, retransmissions, width=0.4, color='#F18F01', alpha=0.8, edgecolor='black')
-    axes[1, 0].set_xlabel('丢包率 (%)', fontsize=12)
-    axes[1, 0].set_ylabel('重传包数', fontsize=12)
-    axes[1, 0].set_title('重传包数随丢包率变化', fontsize=13, fontweight='bold')
-    axes[1, 0].grid(True, alpha=0.3, axis='y')
-    for i, v in enumerate(retransmissions):
-        axes[1, 0].text(loss_rates[i], v + 1, str(v), ha='center', fontsize=10, fontweight='bold')
-    
-    # 子图4：超时次数
-    axes[1, 1].bar(loss_rates, timeouts, width=0.4, color='#C73E1D', alpha=0.8, edgecolor='black')
-    axes[1, 1].set_xlabel('丢包率 (%)', fontsize=12)
-    axes[1, 1].set_ylabel('超时次数', fontsize=12)
-    axes[1, 1].set_title('超时次数随丢包率变化', fontsize=13, fontweight='bold')
-    axes[1, 1].grid(True, alpha=0.3, axis='y')
-    for i, v in enumerate(timeouts):
-        axes[1, 1].text(loss_rates[i], v + 0.3, str(v), ha='center', fontsize=10, fontweight='bold')
-    
-    plt.tight_layout()
-    plt.savefig('loss_rate_impact.png', dpi=300, bbox_inches='tight')
-    print("✓ 已生成：loss_rate_impact.png")
+    throughputs_loss = [0.393, 0.273, 0.276, 0.271, 0.193]
+    times_loss = [37.79, 54.37, 53.90, 54.92, 77.19]
+    retrans_loss = [10, 19, 19, 38, 58]
+    timeouts_loss = [10, 10, 1, 1, 2]
 
+    save_single_plot(loss_rates, throughputs_loss, 'Packet Loss Rate (%)', 'Throughput (Mbps)', 
+                    'Throughput vs Loss Rate', 'loss_throughput.png', '#2E86AB')
+    
+    save_single_plot(loss_rates, times_loss, 'Packet Loss Rate (%)', 'Transmission Time (s)', 
+                    'Transmission Time vs Loss Rate', 'loss_time.png', '#A23B72', marker='s')
+    
+    save_single_plot([str(x) for x in loss_rates], retrans_loss, 'Packet Loss Rate (%)', 'Retransmissions', 
+                    'Retransmissions vs Loss Rate', 'loss_retrans.png', '#F18F01', is_bar=True)
+    
+    save_single_plot([str(x) for x in loss_rates], timeouts_loss, 'Packet Loss Rate (%)', 'Timeouts', 
+                    'Timeouts vs Loss Rate', 'loss_timeouts.png', '#C73E1D', is_bar=True)
 
-def plot_delay_impact():
-    """绘制延时对性能的影响（丢包率固定0.1%）"""
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    fig.suptitle('延时对RDT协议性能的影响（丢包率=0.1%）', fontsize=16, fontweight='bold')
-    
-    # 数据来源：测试数据.txt
-    delays = [0, 5, 20, 100]  # ms
-    throughputs = [1.019, 0.272, 0.176, 0.056]  # Mbps
-    transmission_times = [14.58, 54.58, 84.43, 263.07]  # seconds
-    retransmissions = [2, 19, 41, 303]
-    timeouts = [1, 18, 40, 301]
-    
-    # 子图1：吞吐率（对数坐标更清晰）
-    axes[0, 0].plot(delays, throughputs, marker='o', linewidth=2, markersize=8, color='#2E86AB')
-    axes[0, 0].set_xlabel('延时 (ms)', fontsize=12)
-    axes[0, 0].set_ylabel('吞吐率 (Mbps)', fontsize=12)
-    axes[0, 0].set_title('吞吐率随延时变化', fontsize=13, fontweight='bold')
-    axes[0, 0].set_yscale('log')
-    axes[0, 0].grid(True, alpha=0.3, which="both")
-    for i, v in enumerate(throughputs):
-        axes[0, 0].text(delays[i], v * 1.15, f'{v:.3f}', ha='center', fontsize=9)
-    
-    # 子图2：传输时间
-    axes[0, 1].plot(delays, transmission_times, marker='s', linewidth=2, markersize=8, color='#A23B72')
-    axes[0, 1].set_xlabel('延时 (ms)', fontsize=12)
-    axes[0, 1].set_ylabel('传输时间 (秒)', fontsize=12)
-    axes[0, 1].set_title('传输时间随延时变化', fontsize=13, fontweight='bold')
-    axes[0, 1].grid(True, alpha=0.3)
-    for i, v in enumerate(transmission_times):
-        axes[0, 1].text(delays[i], v + 8, f'{v:.2f}s', ha='center', fontsize=9)
-    
-    # 子图3：重传包数（对数坐标）
-    axes[1, 0].bar([str(d) for d in delays], retransmissions, color='#F18F01', alpha=0.8, edgecolor='black')
-    axes[1, 0].set_xlabel('延时 (ms)', fontsize=12)
-    axes[1, 0].set_ylabel('重传包数', fontsize=12)
-    axes[1, 0].set_title('重传包数随延时变化', fontsize=13, fontweight='bold')
-    axes[1, 0].set_yscale('log')
-    axes[1, 0].grid(True, alpha=0.3, which="both", axis='y')
-    for i, v in enumerate(retransmissions):
-        axes[1, 0].text(i, v * 1.2, str(v), ha='center', fontsize=10, fontweight='bold')
-    
-    # 子图4：超时次数（对数坐标）
-    axes[1, 1].bar([str(d) for d in delays], timeouts, color='#C73E1D', alpha=0.8, edgecolor='black')
-    axes[1, 1].set_xlabel('延时 (ms)', fontsize=12)
-    axes[1, 1].set_ylabel('超时次数', fontsize=12)
-    axes[1, 1].set_title('超时次数随延时变化', fontsize=13, fontweight='bold')
-    axes[1, 1].set_yscale('log')
-    axes[1, 1].grid(True, alpha=0.3, which="both", axis='y')
-    for i, v in enumerate(timeouts):
-        axes[1, 1].text(i, v * 1.2, str(v), ha='center', fontsize=10, fontweight='bold')
-    
-    plt.tight_layout()
-    plt.savefig('delay_impact.png', dpi=300, bbox_inches='tight')
-    print("✓ 已生成：delay_impact.png")
+    # 2. Delay Impact Data (Loss = 0.1%)
+    delays = [0, 5, 20, 100]
+    throughputs_delay = [1.019, 0.272, 0.176, 0.056]
+    times_delay = [14.58, 54.58, 84.43, 263.07]
+    retrans_delay = [2, 19, 41, 303]
+    timeouts_delay = [1, 18, 40, 301]
 
-
-def plot_congestion_window_simulation():
-    """模拟拥塞窗口变化过程"""
-    fig, ax = plt.subplots(figsize=(14, 6))
+    save_single_plot(delays, throughputs_delay, 'One-way Delay (ms)', 'Throughput (Mbps)', 
+                    'Throughput vs Network Delay', 'delay_throughput.png', '#2E86AB', is_log=True)
     
-    # 模拟数据：展示Slow Start → Congestion Avoidance → Fast Recovery
+    save_single_plot(delays, times_delay, 'One-way Delay (ms)', 'Transmission Time (s)', 
+                    'Transmission Time vs Network Delay', 'delay_time.png', '#A23B72', marker='s')
+
+    save_single_plot([str(d) for d in delays], retrans_delay, 'One-way Delay (ms)', 'Retransmissions', 
+                    'Retransmissions vs Network Delay', 'delay_retrans.png', '#F18F01', is_bar=True, is_log=True)
+
+    # 3. Congestion Window Simulation
     time = np.arange(0, 100, 0.5)
     cwnd = []
-    ssthresh = 64 * 1024  # 初始ssthresh
-    current_cwnd = 1024  # 初始MSS
-    
+    ssthresh_val = 64 * 1024
+    curr_cwnd = 1024
     for t in time:
-        if t < 20:  # Slow Start阶段
-            current_cwnd = 1024 * (2 ** (t / 2))
-            if current_cwnd > ssthresh:
-                current_cwnd = ssthresh
-        elif t < 50:  # Congestion Avoidance阶段
-            current_cwnd += (1024 ** 2) / current_cwnd * 0.5
-        elif t < 55:  # 3 dup ACKs触发Fast Recovery
-            ssthresh = current_cwnd / 2
-            current_cwnd = ssthresh + 3 * 1024
-        elif t < 75:  # Fast Recovery期间
-            current_cwnd += 1024 * 0.3
-        elif t < 77:  # Timeout触发
-            ssthresh = max(current_cwnd / 2, 1024)
-            current_cwnd = 4 * 1024
-        else:  # 重新Slow Start
-            current_cwnd *= 1.1
-            if current_cwnd > ssthresh:
-                current_cwnd += 500
-        
-        cwnd.append(current_cwnd / 1024)  # 转换为KB
+        if t < 20: curr_cwnd = 1024 * (2 ** (t / 2))
+        elif t < 50: curr_cwnd += (1024 ** 2) / curr_cwnd * 0.5
+        elif t < 55: curr_cwnd = curr_cwnd / 2 + 3 * 1024
+        elif t < 75: curr_cwnd += 1024 * 0.3
+        elif t < 77: curr_cwnd = 4 * 1024
+        else: curr_cwnd *= 1.1
+        cwnd.append(curr_cwnd / 1024)
     
-    # 绘制拥塞窗口变化
-    ax.plot(time, cwnd, linewidth=2.5, color='#2E86AB', label='拥塞窗口 (cwnd)')
-    ax.axhline(y=ssthresh / 1024, color='#C73E1D', linestyle='--', linewidth=2, label='慢启动阈值 (ssthresh)')
-    
-    # 标注关键事件
-    ax.annotate('慢启动', xy=(10, 20), xytext=(10, 35),
-                arrowprops=dict(arrowstyle='->', color='green', lw=2),
-                fontsize=11, color='green', fontweight='bold')
-    ax.annotate('拥塞避免', xy=(35, 60), xytext=(30, 75),
-                arrowprops=dict(arrowstyle='->', color='blue', lw=2),
-                fontsize=11, color='blue', fontweight='bold')
-    ax.annotate('快速恢复\n(3 dup ACKs)', xy=(52, 45), xytext=(58, 30),
-                arrowprops=dict(arrowstyle='->', color='orange', lw=2),
-                fontsize=11, color='orange', fontweight='bold')
-    ax.annotate('超时重传\n(cwnd → 4MSS)', xy=(76, 4), xytext=(80, 20),
-                arrowprops=dict(arrowstyle='->', color='red', lw=2),
-                fontsize=11, color='red', fontweight='bold')
-    
-    ax.set_xlabel('时间 (RTT)', fontsize=13)
-    ax.set_ylabel('拥塞窗口 (KB)', fontsize=13)
-    ax.set_title('TCP Reno拥塞控制算法 - 拥塞窗口动态变化', fontsize=15, fontweight='bold')
-    ax.legend(loc='upper left', fontsize=12)
-    ax.grid(True, alpha=0.3)
-    
+    plt.figure(figsize=(12, 6))
+    plt.plot(time, cwnd, linewidth=2.5, color='#2E86AB', label='Congestion Window (cwnd)')
+    plt.axhline(y=32, color='#C73E1D', linestyle='--', label='ssthresh')
+    plt.annotate('Slow Start', xy=(10, 20), xytext=(10, 40), arrowprops=dict(arrowstyle='->', color='green'), fontweight='bold')
+    plt.annotate('Congestion\nAvoidance', xy=(35, 60), xytext=(30, 80), arrowprops=dict(arrowstyle='->', color='blue'), fontweight='bold')
+    plt.annotate('Fast Recovery', xy=(52, 45), xytext=(58, 30), arrowprops=dict(arrowstyle='->', color='orange'), fontweight='bold')
+    plt.annotate('Timeout', xy=(76, 4), xytext=(80, 20), arrowprops=dict(arrowstyle='->', color='red'), fontweight='bold')
+    plt.xlabel('Time (RTT)')
+    plt.ylabel('Window Size (KB)')
+    plt.title('TCP Reno Congestion Window Dynamics', fontweight='bold')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig('cwnd_simulation.png', dpi=300, bbox_inches='tight')
-    print("✓ 已生成：cwnd_simulation.png")
+    plt.savefig('cwnd_dynamics.png', dpi=300)
+    plt.close()
+    print("✓ Saved: cwnd_dynamics.png")
 
-
-def plot_performance_comparison():
-    """绘制理想环境vs实际环境性能对比"""
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    scenarios = ['理想环境\n(无丢包/延时)', '低丢包\n(0.1%, 0ms)', '中等丢包\n(1%, 5ms)', '高丢包\n(3%, 5ms)', '高延时\n(0.1%, 100ms)']
-    throughputs = [782.043, 1.019, 0.276, 0.193, 0.056]
-    colors = ['#27AE60', '#3498DB', '#F39C12', '#E74C3C', '#8E44AD']
-    
-    bars = ax.bar(scenarios, throughputs, color=colors, alpha=0.85, edgecolor='black', linewidth=1.5)
-    
-    # 添加数值标签
-    for i, (bar, value) in enumerate(zip(bars, throughputs)):
-        height = bar.get_height()
-        if value > 10:
-            ax.text(bar.get_x() + bar.get_width()/2., height,
-                    f'{value:.1f}',
-                    ha='center', va='bottom', fontsize=11, fontweight='bold')
-        else:
-            ax.text(bar.get_x() + bar.get_width()/2., height,
-                    f'{value:.3f}',
-                    ha='center', va='bottom', fontsize=11, fontweight='bold')
-    
-    ax.set_ylabel('吞吐率 (Mbps)', fontsize=13)
-    ax.set_title('不同网络环境下的RDT协议性能对比', fontsize=15, fontweight='bold')
-    ax.set_yscale('log')
-    ax.grid(True, alpha=0.3, axis='y', which='both')
-    
-    # 添加参考线
-    ax.axhline(y=1, color='gray', linestyle=':', linewidth=1, alpha=0.7)
-    ax.text(0.5, 1.2, '1 Mbps', fontsize=9, color='gray')
-    
+    # 4. Scenario Comparison
+    scenarios = ['Ideal', 'Loss 0.1%\n0ms', 'Loss 1%\n5ms', 'Loss 3%\n5ms', 'Delay 100ms\n0.1%']
+    tput_comp = [782.043, 1.019, 0.276, 0.193, 0.056]
+    plt.figure(figsize=(10, 6))
+    plt.bar(scenarios, tput_comp, color=['#27AE60', '#3498DB', '#F39C12', '#E74C3C', '#8E44AD'], alpha=0.8)
+    plt.yscale('log')
+    plt.ylabel('Throughput (Mbps)')
+    plt.title('Performance Comparison across Network Scenarios', fontweight='bold')
+    plt.grid(True, axis='y', linestyle=':', alpha=0.7)
+    for i, v in enumerate(tput_comp):
+        plt.text(i, v, f'{v:.1f}' if v > 10 else f'{v:.3f}', ha='center', va='bottom', fontweight='bold')
     plt.tight_layout()
-    plt.savefig('performance_comparison.png', dpi=300, bbox_inches='tight')
-    print("✓ 已生成：performance_comparison.png")
-
+    plt.savefig('perf_comparison.png', dpi=300)
+    plt.close()
+    print("✓ Saved: perf_comparison.png")
 
 if __name__ == '__main__':
-    print("=" * 50)
-    print("RDT协议性能数据可视化")
-    print("=" * 50)
-    
-    plot_loss_rate_impact()
-    plot_delay_impact()
-    plot_congestion_window_simulation()
-    plot_performance_comparison()
-    
-    print("\n" + "=" * 50)
-    print("✓ 所有图表生成完成！")
-    print("=" * 50)
-    print("\n生成的图表文件：")
-    print("  1. loss_rate_impact.png       - 丢包率影响分析（4子图）")
-    print("  2. delay_impact.png            - 延时影响分析（4子图）")
-    print("  3. cwnd_simulation.png         - 拥塞窗口动态变化")
-    print("  4. performance_comparison.png  - 性能对比柱状图")
+    generate_all_plots()
